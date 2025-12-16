@@ -1,3 +1,5 @@
+using namespace metal;
+
 struct VSIn {
   float2 position[[attribute(0)]];
   float2 size[[attribute(1)]];
@@ -8,6 +10,42 @@ struct VSOut {
   float2 uv;
   uint digit [[flat]];
 };
+
+float3x3 translate(float2 offset) {
+    return float3x3(
+        float3(1, 0, 0),
+        float3(0, 1, 0),
+        float3(offset.x, offset.y, 1)
+    );
+}
+
+constant float DEG_TO_RAD = M_PI_F / 180.0f;
+float3x3 rotation(float degrees) {
+    float angle = degrees * DEG_TO_RAD;
+    float c = cos(angle);
+    float s = sin(angle);
+    return float3x3(
+        float3(c, -s, 0),
+        float3(s, c, 0),
+        float3(0, 0, 1)
+    );
+}
+
+float3x3 rotationAt(float2 center, float degrees) {
+    return translate(center) * rotation(degrees) * translate(-center);
+}
+
+float3x3 scale(float2 factor) {
+    return float3x3(
+        float3(factor.x, 0, 0),
+        float3(0, factor.y, 0),
+        float3(0, 0, 1)
+    );
+}
+
+float2 transform(float3x3 m, float2 p) {
+    return (m * float3(p, 1.0)).xy;
+}
 
 float2 pixelToNDC(float2 p, float2 viewport) {
     return float2((p.x / viewport.x) * 2.0 - 1.0 ,1.0 - (p.y / viewport.y) * 2.0);
@@ -41,7 +79,12 @@ vertex VSOut s_main(VSIn in [[stage_in]], uint vid [[vertex_id]],
     y = in.position.y + in.size.y - offset.y;
   }
 
-  o.position = float4(pixelToNDC(float2(x, y), ss), 0.0, 1.0);
+  float2 pos = float2(x, y);
+  float2 center = in.position + in.size / 2.0;
+
+  pos = transform(rotationAt(center, 15.0), pos);
+
+  o.position = float4(pixelToNDC(pos, ss), 0.0, 1.0);
 
   if (i == 0) {
     o.uv = float2(0.0, 0.0);

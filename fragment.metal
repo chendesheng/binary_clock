@@ -3,14 +3,14 @@ using namespace metal;
 
 struct VSOut {
   float4 position;
+  float2 local;
   float4 color;
   float4 rect [[flat]]; // x, y, w, h in pixels
 };
 
-fragment float4 s_main(VSOut in [[stage_in]],
-                       float4 fragCoord [[position]]) // pixel coord
+fragment float4 s_main(VSOut in [[stage_in]]) // pixel coord
 {
-    float2 p = fragCoord.xy;
+    float2 p = in.local;
 
     float2 tl = in.rect.xy;
     float2 br = tl + in.rect.zw;
@@ -27,9 +27,11 @@ fragment float4 s_main(VSOut in [[stage_in]],
     float2 q = abs(local) - (halfSize - float2(radius));
     float dist = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;
 
-    // 🔹 Anti-aliasing
-    float aa = fwidth(dist);
-    float alpha = 1.0 - smoothstep(0.0, aa, dist);
+    // Anti-aliasing
+    float2 g = float2(dfdx(dist), dfdy(dist));
+    float aa = length(g);
+    aa = clamp(aa, 0.75, 1.5);
+    float alpha = smoothstep(aa, -aa, dist);
 
     return float4(in.color.rgb,
                   in.color.a * alpha);
