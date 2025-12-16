@@ -1,6 +1,6 @@
 struct VSIn {
-   float2 xy [[attribute(1)]];
-   float2 sz [[attribute(2)]];
+   float2 xy [[attribute(0)]];
+   float2 sz [[attribute(1)]];
 };
 
 struct VSOut {

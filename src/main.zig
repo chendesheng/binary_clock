@@ -112,17 +112,6 @@ fn setQuad(vetices: []Vertex, i: usize, x: f32, y: f32, w: f32, h: f32) void {
 
 const NUM_RECTS = 24;
 
-fn createDummyVertexBuffer(gpu: Device) !sdl3.gpu.Buffer {
-    const transfer_buffer = try TransferBuffer(Vertex).init(gpu, 1);
-    defer transfer_buffer.deinit();
-
-    transfer_buffer.mapped[0] = .{ .x = 0, .y = 0 };
-
-    const vbo = try gpu.createBuffer(.{ .usage = .{ .vertex = true }, .size = transfer_buffer.size });
-    try transfer_buffer.uploadToBuffer(vbo, false);
-    return vbo;
-}
-
 fn createVertexBuffer(gpu: Device) !sdl3.gpu.Buffer {
     const transfer_buffer = try TransferBuffer(Rect).init(gpu, NUM_RECTS);
     defer transfer_buffer.deinit();
@@ -179,13 +168,11 @@ fn createPipeline(allocator: Allocator, gpu: Device, texture_format: TextureForm
         .primitive_type = .triangle_list,
         .vertex_input_state = .{
             .vertex_buffer_descriptions = &[_]VertexBufferDescription{
-                .{ .slot = 0, .pitch = @sizeOf(Vertex), .input_rate = .vertex },
-                .{ .slot = 1, .pitch = @sizeOf(Rect), .input_rate = .instance },
+                .{ .slot = 0, .pitch = @sizeOf(Rect), .input_rate = .instance },
             }, // please break line
             .vertex_attributes = &[_]VertexAttribute{
-                .{ .location = 0, .buffer_slot = 0, .offset = 0, .format = VertexElementFormat.f32x2 },
-                .{ .location = 1, .buffer_slot = 1, .offset = @offsetOf(Rect, "x"), .format = VertexElementFormat.f32x2 },
-                .{ .location = 2, .buffer_slot = 1, .offset = @offsetOf(Rect, "w"), .format = VertexElementFormat.f32x2 },
+                .{ .location = 0, .buffer_slot = 0, .offset = @offsetOf(Rect, "x"), .format = VertexElementFormat.f32x2 },
+                .{ .location = 1, .buffer_slot = 0, .offset = @offsetOf(Rect, "w"), .format = VertexElementFormat.f32x2 },
             },
         },
         .fragment_shader = fs,
@@ -319,7 +306,6 @@ pub fn main() !void {
 
     try gpu.claimWindow(window);
 
-    const vbo_dummy = try createDummyVertexBuffer(gpu);
     const vbo = try createVertexBuffer(gpu);
     const swap_texture_format = try gpu.getSwapchainTextureFormat(window);
     const pipeline = try createPipeline(allocator, gpu, swap_texture_format);
@@ -386,8 +372,7 @@ pub fn main() !void {
         setColorsFromDigits(&digits, &colors);
         cmd.pushVertexUniformData(1, @ptrCast(&colors));
         pass.bindGraphicsPipeline(pipeline);
-        pass.bindVertexBuffers(0, &[_]BufferBinding{.{ .buffer = vbo_dummy, .offset = 0 }});
-        pass.bindVertexBuffers(1, &[_]BufferBinding{.{ .buffer = vbo, .offset = 0 }});
+        pass.bindVertexBuffers(0, &[_]BufferBinding{.{ .buffer = vbo, .offset = 0 }});
         pass.drawPrimitives(6, NUM_RECTS, 0, 0);
 
         pass.bindGraphicsPipeline(tex_pipeline);
