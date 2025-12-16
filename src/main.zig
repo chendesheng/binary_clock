@@ -3,7 +3,6 @@ const ttf = sdl3.ttf;
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Device = sdl3.gpu.Device;
-const Vertex = struct { x: f32, y: f32 };
 const TextureFormat = sdl3.gpu.TextureFormat;
 const VertexAttribute = sdl3.gpu.VertexAttribute;
 const VertexElementFormat = sdl3.gpu.VertexElementFormat;
@@ -21,6 +20,9 @@ const ColorTargetBlendState = sdl3.gpu.ColorTargetBlendState;
 const TextureSamplerBinding = sdl3.gpu.TextureSamplerBinding;
 const ColorTargetInfo = sdl3.gpu.ColorTargetInfo;
 const Surface = sdl3.surface.Surface;
+
+const Vertex = struct { x: f32, y: f32 };
+const Rect = struct { x: f32, y: f32, w: f32, h: f32 };
 
 fn createShader(allocator: Allocator, gpu: Device, file: [:0]const u8, entry_point: [:0]const u8, stage: ShaderStage) !Shader {
     const f = try std.fs.cwd().openFile(file, .{});
@@ -108,16 +110,32 @@ fn setQuad(vetices: []Vertex, i: usize, x: f32, y: f32, w: f32, h: f32) void {
     vetices[start + 5] = .{ .x = x, .y = y };
 }
 
-const NUM_VERTEX = 24 * 6;
+const NUM_RECTS = 24;
 
-fn createVertexBuffer(gpu: Device) !sdl3.gpu.Buffer {
-    const transfer_buffer = try TransferBuffer(Vertex).init(gpu, NUM_VERTEX);
+fn createDummyVertexBuffer(gpu: Device) !sdl3.gpu.Buffer {
+    const transfer_buffer = try TransferBuffer(Vertex).init(gpu, 1);
     defer transfer_buffer.deinit();
 
-    for (0..4) |y| {
-        for (0..6) |x| {
-            setQuad(transfer_buffer.mapped, y * 6 + x, @floatFromInt(10 + x * (50 + 10)), @floatFromInt(10 + y * (50 + 10)), 50, 50);
-        }
+    transfer_buffer.mapped[0] = .{ .x = 0, .y = 0 };
+
+    const vbo = try gpu.createBuffer(.{ .usage = .{ .vertex = true }, .size = transfer_buffer.size });
+    try transfer_buffer.uploadToBuffer(vbo, false);
+    return vbo;
+}
+
+fn createVertexBuffer(gpu: Device) !sdl3.gpu.Buffer {
+    const transfer_buffer = try TransferBuffer(Rect).init(gpu, NUM_RECTS);
+    defer transfer_buffer.deinit();
+
+    for (0..NUM_RECTS) |i| {
+        const x = i % 6;
+        const y = i / 6;
+        transfer_buffer.mapped[i] = .{
+            .x = @floatFromInt(10 + x * (50 + 10)), //
+            .y = @floatFromInt(10 + y * (50 + 10)),
+            .w = 50,
+            .h = 50,
+        };
     }
 
     const vbo = try gpu.createBuffer(.{ .usage = .{ .vertex = true }, .size = transfer_buffer.size });
@@ -126,7 +144,7 @@ fn createVertexBuffer(gpu: Device) !sdl3.gpu.Buffer {
 }
 
 fn createTexVertexBuffer(gpu: Device, i: usize) !sdl3.gpu.Buffer {
-    const transfer_buffer = try TransferBuffer(Vertex).init(gpu, 6 * 6);
+    const transfer_buffer = try TransferBuffer(Vertex).init(gpu, 6);
     defer transfer_buffer.deinit();
 
     setQuad(transfer_buffer.mapped, 0, @floatFromInt(10 + i * 60), 250, 50, 50);
@@ -160,8 +178,15 @@ fn createPipeline(allocator: Allocator, gpu: Device, texture_format: TextureForm
         .vertex_shader = vs,
         .primitive_type = .triangle_list,
         .vertex_input_state = .{
-            .vertex_buffer_descriptions = &[_]VertexBufferDescription{.{ .slot = 0, .pitch = @sizeOf(Vertex), .input_rate = .vertex }}, // please break line
-            .vertex_attributes = &[_]VertexAttribute{.{ .location = 0, .buffer_slot = 0, .offset = 0, .format = VertexElementFormat.f32x2 }},
+            .vertex_buffer_descriptions = &[_]VertexBufferDescription{
+                .{ .slot = 0, .pitch = @sizeOf(Vertex), .input_rate = .vertex },
+                .{ .slot = 1, .pitch = @sizeOf(Rect), .input_rate = .instance },
+            }, // please break line
+            .vertex_attributes = &[_]VertexAttribute{
+                .{ .location = 0, .buffer_slot = 0, .offset = 0, .format = VertexElementFormat.f32x2 },
+                .{ .location = 1, .buffer_slot = 1, .offset = @offsetOf(Rect, "x"), .format = VertexElementFormat.f32x2 },
+                .{ .location = 2, .buffer_slot = 1, .offset = @offsetOf(Rect, "w"), .format = VertexElementFormat.f32x2 },
+            },
         },
         .fragment_shader = fs,
         .target_info = .{ .color_target_descriptions = &[_]ColorTargetDescription{.{ .format = texture_format }} },
@@ -262,7 +287,7 @@ fn updateDigitsToCurrentLocalTime(digits: *[6]u8) !void {
     digits[5] = @intCast(time.second % 10);
 }
 
-fn setColorsFromDigits(digits: *const [6]u8, colors: *[24]bool) void {
+fn setColorsFromDigits(digits: *const [6]u8, colors: *[NUM_RECTS]bool) void {
     for (0..6) |i| {
         for (0..4) |j| {
             colors[i + j * 6] = (digits[i] & (@as(u8, 1) << @intCast(3 - j))) != 0;
@@ -294,6 +319,7 @@ pub fn main() !void {
 
     try gpu.claimWindow(window);
 
+    const vbo_dummy = try createDummyVertexBuffer(gpu);
     const vbo = try createVertexBuffer(gpu);
     const swap_texture_format = try gpu.getSwapchainTextureFormat(window);
     const pipeline = try createPipeline(allocator, gpu, swap_texture_format);
@@ -356,12 +382,13 @@ pub fn main() !void {
 
         cmd.pushVertexUniformData(0, @ptrCast(&[_]f32{ @floatFromInt(width), @floatFromInt(height) }));
 
-        var colors = [_]bool{false} ** 24;
+        var colors = [_]bool{false} ** NUM_RECTS;
         setColorsFromDigits(&digits, &colors);
         cmd.pushVertexUniformData(1, @ptrCast(&colors));
         pass.bindGraphicsPipeline(pipeline);
-        pass.bindVertexBuffers(0, &[_]BufferBinding{.{ .buffer = vbo, .offset = 0 }});
-        pass.drawPrimitives(NUM_VERTEX, 1, 0, 0);
+        pass.bindVertexBuffers(0, &[_]BufferBinding{.{ .buffer = vbo_dummy, .offset = 0 }});
+        pass.bindVertexBuffers(1, &[_]BufferBinding{.{ .buffer = vbo, .offset = 0 }});
+        pass.drawPrimitives(6, NUM_RECTS, 0, 0);
 
         pass.bindGraphicsPipeline(tex_pipeline);
         for (0..digits.len) |i| {

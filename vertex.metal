@@ -1,5 +1,6 @@
 struct VSIn {
-   float2 position [[attribute(0)]];
+   float2 xy [[attribute(1)]];
+   float2 sz [[attribute(2)]];
 };
 
 struct VSOut {
@@ -11,16 +12,27 @@ struct Colors {
    bool colors[24];
 };
 
-vertex VSOut s_main(VSIn in [[stage_in]], uint vid [[vertex_id]], constant float2& ss [[buffer(0)]], constant Colors& c [[buffer(1)]]) {
+vertex VSOut s_main(VSIn in [[stage_in]], uint vid [[vertex_id]], uint iid [[instance_id]], constant float2& ss [[buffer(0)]], constant Colors& c [[buffer(1)]]) {
    VSOut o;
 
+   float2 pos;
+   uint i = vid % 6;
+   if (i == 0 || i == 5) {
+      pos = in.xy;
+   } else if (i == 1) {
+      pos = float2(in.xy.x + in.sz.x, in.xy.y);
+   } else if (i == 2 || i == 3) {
+      pos = float2(in.xy.x + in.sz.x, in.xy.y + in.sz.y);
+   } else if (i == 4) {
+      pos = float2(in.xy.x, in.xy.y + in.sz.y);
+   }
+
    float2 ndc;
-   ndc.x = (in.position.x / ss.x) * 2.0 - 1.0;
-   ndc.y = 1.0 - (in.position.y / ss.y) * 2.0;
+   ndc.x = (pos.x / ss.x) * 2.0 - 1.0;
+   ndc.y = 1.0 - (pos.y / ss.y) * 2.0;
    o.position = float4(ndc, 0.0, 1.0);
 
-   uint quadIndex = vid / 6;
-   o.color = c.colors[quadIndex]
+   o.color = c.colors[iid]
               ? float4(1.0, 0.0, 0.0, 1.0)
               : float4(0.0, 0.0, 1.0, 1.0);
 
