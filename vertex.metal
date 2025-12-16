@@ -19,19 +19,14 @@ vertex VSOut s_main(VSIn in [[stage_in]], uint vid [[vertex_id]], uint iid [[ins
 
     float2 pos;
     uint i = vid % 6;
-    uint corner = 0;
     if (i == 0 || i == 5) {
         pos = in.xy;
-        corner = 0;
     } else if (i == 1) {
         pos = float2(in.xy.x + in.sz.x, in.xy.y);
-        corner = 1;
     } else if (i == 2 || i == 3) {
         pos = float2(in.xy.x + in.sz.x, in.xy.y + in.sz.y);
-        corner = 2;
     } else if (i == 4) {
         pos = float2(in.xy.x, in.xy.y + in.sz.y);
-        corner = 3;
     }
 
     o.position = float4(pixelToNDC(pos, viewport), 0.0, 1.0);
