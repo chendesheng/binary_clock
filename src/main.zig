@@ -150,6 +150,15 @@ fn createTexShader(allocator: Allocator, gpu: Device, file: [:0]const u8, entry_
     });
 }
 
+const premultiplied_alpha_blending = ColorTargetBlendState{
+    .enable_blend = true,
+    .source_color = .src_alpha,
+    .destination_color = .one_minus_src_alpha,
+
+    .source_alpha = .one,
+    .destination_alpha = .one_minus_src_alpha,
+};
+
 fn createPipeline(allocator: Allocator, gpu: Device, texture_format: TextureFormat) !GraphicsPipeline {
     const vs = try createShader(allocator, gpu, "vertex.metal", "s_main", .vertex);
     const fs = try createShader(allocator, gpu, "fragment.metal", "s_main", .fragment);
@@ -166,7 +175,10 @@ fn createPipeline(allocator: Allocator, gpu: Device, texture_format: TextureForm
             },
         },
         .fragment_shader = fs,
-        .target_info = .{ .color_target_descriptions = &[_]ColorTargetDescription{.{ .format = texture_format }} },
+        .target_info = .{ .color_target_descriptions = &[_]ColorTargetDescription{.{
+            .format = texture_format,
+            .blend_state = premultiplied_alpha_blending,
+        }} },
     });
 }
 
@@ -186,15 +198,7 @@ fn createTexPipeline(allocator: Allocator, gpu: Device, texture_format: TextureF
         .fragment_shader = fs,
         .target_info = .{ .color_target_descriptions = &[_]ColorTargetDescription{.{
             .format = texture_format,
-            .blend_state = ColorTargetBlendState{
-                .source_color = .src_alpha,
-                .source_alpha = .one,
-                .destination_color = .one_minus_src_alpha,
-                .destination_alpha = .one_minus_src_alpha,
-                .color_blend = .add,
-                .alpha_blend = .add,
-                .enable_blend = true,
-            },
+            .blend_state = premultiplied_alpha_blending,
         }} },
     });
 }
