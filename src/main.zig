@@ -133,10 +133,10 @@ fn createVertexBuffer(gpu: Device) !sdl3.gpu.Buffer {
 }
 
 fn createTexVertexBuffer(gpu: Device, i: usize) !sdl3.gpu.Buffer {
-    const transfer_buffer = try TransferBuffer(Vertex).init(gpu, 6);
+    const transfer_buffer = try TransferBuffer(Rect).init(gpu, 1);
     defer transfer_buffer.deinit();
 
-    setQuad(transfer_buffer.mapped, 0, @floatFromInt(10 + i * 60), 250, 50, 50);
+    transfer_buffer.mapped[0] = .{ .x = @floatFromInt(10 + i * 60), .y = 250, .w = 50, .h = 50 };
 
     const vbo = try gpu.createBuffer(.{ .usage = .{ .vertex = true }, .size = transfer_buffer.size });
     try transfer_buffer.uploadToBuffer(vbo, false);
@@ -187,8 +187,11 @@ fn createTexPipeline(allocator: Allocator, gpu: Device, texture_format: TextureF
         .vertex_shader = vs,
         .primitive_type = .triangle_list,
         .vertex_input_state = .{
-            .vertex_buffer_descriptions = &[_]VertexBufferDescription{.{ .slot = 0, .pitch = @sizeOf(Vertex), .input_rate = .vertex }}, // please break line
-            .vertex_attributes = &[_]VertexAttribute{.{ .location = 0, .buffer_slot = 0, .offset = 0, .format = VertexElementFormat.f32x2 }},
+            .vertex_buffer_descriptions = &[_]VertexBufferDescription{.{ .slot = 0, .pitch = @sizeOf(Rect), .input_rate = .instance }},
+            .vertex_attributes = &[_]VertexAttribute{
+                .{ .location = 0, .buffer_slot = 0, .offset = @offsetOf(Rect, "x"), .format = VertexElementFormat.f32x2 },
+                .{ .location = 1, .buffer_slot = 0, .offset = @offsetOf(Rect, "w"), .format = VertexElementFormat.f32x2 },
+            },
         },
         .fragment_shader = fs,
         .target_info = .{ .color_target_descriptions = &[_]ColorTargetDescription{.{

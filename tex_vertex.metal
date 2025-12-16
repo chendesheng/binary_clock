@@ -1,5 +1,6 @@
 struct VSIn {
-  float2 position [[attribute(0)]];
+  float2 position[[attribute(0)]];
+  float2 size[[attribute(1)]];
 };
 
 struct VSOut {
@@ -18,21 +19,20 @@ vertex VSOut s_main(VSIn in [[stage_in]], uint vid [[vertex_id]],
 
   o.digit = digit;
 
-  float x = in.position.x;
-  float y = in.position.y;
+  float x, y;
 
   if (i == 0 || i == 5) {
-    x += offset.x;
-    y += offset.y;
+    x = in.position.x + offset.x;
+    y = in.position.y + offset.y;
   } else if (i == 1) {
-    x -= offset.x;
-    y += offset.y;
+    x = in.position.x + in.size.x - offset.x;
+    y = in.position.y + offset.y;
   } else if (i == 2 || i == 3) {
-    x -= offset.x;
-    y -= offset.y;
+    x = in.position.x + in.size.x - offset.x;
+    y = in.position.y + in.size.y - offset.y;
   } else if (i == 4) {
-    x += offset.x;
-    y -= offset.y;
+    x = in.position.x + offset.x;
+    y = in.position.y + in.size.y - offset.y;
   }
 
   float2 ndc;
