@@ -9,6 +9,10 @@ struct VSOut {
   uint digit [[flat]];
 };
 
+float2 pixelToNDC(float2 p, float2 viewport) {
+    return float2((p.x / viewport.x) * 2.0 - 1.0 ,1.0 - (p.y / viewport.y) * 2.0);
+}
+
 vertex VSOut s_main(VSIn in [[stage_in]], uint vid [[vertex_id]],
                     constant float2 &ss [[buffer(0)]],
                     constant uint &digit [[buffer(1)]],
@@ -35,10 +39,7 @@ vertex VSOut s_main(VSIn in [[stage_in]], uint vid [[vertex_id]],
     y = in.position.y + in.size.y - offset.y;
   }
 
-  float2 ndc;
-  ndc.x = (x / ss.x) * 2.0 - 1.0;
-  ndc.y = 1.0 - (y / ss.y) * 2.0;
-  o.position = float4(ndc, 0.0, 1.0);
+  o.position = float4(pixelToNDC(float2(x, y), ss), 0.0, 1.0);
 
   if (i == 0) {
     o.uv = float2(0.0, 0.0);

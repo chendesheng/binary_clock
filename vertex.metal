@@ -10,7 +10,11 @@ struct VSOut {
     float4 rect [[flat]];
 };
 
-vertex VSOut s_main(VSIn in [[stage_in]], uint vid [[vertex_id]], uint iid [[instance_id]], constant float2& ss [[buffer(0)]], constant uint& colors [[buffer(1)]]) {
+float2 pixelToNDC(float2 p, float2 viewport) {
+    return float2((p.x / viewport.x) * 2.0 - 1.0 ,1.0 - (p.y / viewport.y) * 2.0);
+}
+
+vertex VSOut s_main(VSIn in [[stage_in]], uint vid [[vertex_id]], uint iid [[instance_id]], constant float2& viewport [[buffer(0)]], constant uint& colors [[buffer(1)]]) {
     VSOut o;
 
     float2 pos;
@@ -30,10 +34,7 @@ vertex VSOut s_main(VSIn in [[stage_in]], uint vid [[vertex_id]], uint iid [[ins
         corner = 3;
     }
 
-    float2 ndc;
-    ndc.x = (pos.x / ss.x) * 2.0 - 1.0;
-    ndc.y = 1.0 - (pos.y / ss.y) * 2.0;
-    o.position = float4(ndc, 0.0, 1.0);
+    o.position = float4(pixelToNDC(pos, viewport), 0.0, 1.0);
 
     o.color = (colors & (1 << iid)) != 0
         ? float4(1.0, 0.0, 0.0, 1.0)
