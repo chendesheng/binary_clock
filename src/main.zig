@@ -100,16 +100,6 @@ pub fn TransferBuffer(comptime T: type) type {
     };
 }
 
-fn setQuad(vetices: []Vertex, i: usize, x: f32, y: f32, w: f32, h: f32) void {
-    const start = i * 6;
-    vetices[start] = .{ .x = x, .y = y };
-    vetices[start + 1] = .{ .x = x + w, .y = y };
-    vetices[start + 2] = .{ .x = x + w, .y = y + h };
-    vetices[start + 3] = .{ .x = x + w, .y = y + h };
-    vetices[start + 4] = .{ .x = x, .y = y + h };
-    vetices[start + 5] = .{ .x = x, .y = y };
-}
-
 const NUM_RECTS = 24;
 
 fn createVertexBuffer(gpu: Device) !sdl3.gpu.Buffer {
@@ -117,8 +107,8 @@ fn createVertexBuffer(gpu: Device) !sdl3.gpu.Buffer {
     defer transfer_buffer.deinit();
 
     for (0..NUM_RECTS) |i| {
-        const x = i % 6;
-        const y = i / 6;
+        const x = i / 4;
+        const y = i % 4;
         transfer_buffer.mapped[i] = .{
             .x = @floatFromInt(10 + x * (50 + 10)), //
             .y = @floatFromInt(10 + y * (50 + 10)),
@@ -277,10 +267,15 @@ fn updateDigitsToCurrentLocalTime(digits: *[6]u8) !void {
     digits[5] = @intCast(time.second % 10);
 }
 
-fn setColorsFromDigits(digits: *const [6]u8, colors: *[NUM_RECTS]bool) void {
-    for (0..6) |i| {
-        for (0..4) |j| {
-            colors[i + j * 6] = (digits[i] & (@as(u8, 1) << @intCast(3 - j))) != 0;
+fn setColorsFromDigits(digits: *const [6]u8, colors: *u32) void {
+    for (0..NUM_RECTS) |i| {
+        const x = i / 4;
+        const y = i % 4;
+        const mask = @as(u32, 1) << @intCast(i);
+        if (digits[x] & (@as(u8, 1) << @intCast(3 - y)) != 0) {
+            colors.* |= mask;
+        } else {
+            colors.* &= ~mask;
         }
     }
 }
@@ -371,7 +366,7 @@ pub fn main() !void {
 
         cmd.pushVertexUniformData(0, @ptrCast(&[_]f32{ @floatFromInt(width), @floatFromInt(height) }));
 
-        var colors = [_]bool{false} ** NUM_RECTS;
+        var colors: u32 = 0;
         setColorsFromDigits(&digits, &colors);
         cmd.pushVertexUniformData(1, @ptrCast(&colors));
         pass.bindGraphicsPipeline(pipeline);
