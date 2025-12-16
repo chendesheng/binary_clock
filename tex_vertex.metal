@@ -16,7 +16,7 @@ float2 pixelToNDC(float2 p, float2 viewport) {
 vertex VSOut s_main(VSIn in [[stage_in]], uint vid [[vertex_id]],
                     constant float2 &ss [[buffer(0)]],
                     constant uint &digit [[buffer(1)]],
-                    constant float2 &offset [[buffer(2)]]) {
+                    constant float2 &digitSize [[buffer(2)]]) {
   VSOut o;
 
   uint i = vid % 6;
@@ -24,6 +24,8 @@ vertex VSOut s_main(VSIn in [[stage_in]], uint vid [[vertex_id]],
   o.digit = digit;
 
   float x, y;
+
+  float2 offset = (in.size - digitSize) / 2.0;
 
   if (i == 0 || i == 5) {
     x = in.position.x + offset.x;

@@ -314,14 +314,14 @@ pub fn main() !void {
 
     var bmp_textures = [_]Texture{undefined} ** 10;
     var surfes = [_]Surface{undefined} ** 10;
-    var digitOffsets = [_]struct { f32, f32 }{undefined} ** 10;
+    var digitSizes = [_]struct { f32, f32 }{undefined} ** 10;
     for (0..surfes.len) |i| {
         const texture, const surf = try createTexBuffer(gpu, '0' + @as(u8, @intCast(i)));
         bmp_textures[i] = texture;
         surfes[i] = surf;
-        digitOffsets[i] = .{
-            @floatFromInt((50 - surf.getWidth()) / 2), //
-            @floatFromInt((50 - surf.getHeight()) / 2),
+        digitSizes[i] = .{
+            @floatFromInt(surf.getWidth()), //
+            @floatFromInt(surf.getHeight()),
         };
     }
 
@@ -381,7 +381,7 @@ pub fn main() !void {
         for (0..digits.len) |i| {
             const digit = digits[i];
             cmd.pushVertexUniformData(1, @ptrCast(&digit));
-            cmd.pushVertexUniformData(2, @ptrCast(&digitOffsets[digit]));
+            cmd.pushVertexUniformData(2, @ptrCast(&digitSizes[digit]));
             pass.bindVertexBuffers(0, &[_]BufferBinding{.{ .buffer = tex_vboes[i], .offset = 0 }});
             pass.bindFragmentSamplers(0, &[_]TextureSamplerBinding{.{
                 .texture = bmp_textures[digit],
