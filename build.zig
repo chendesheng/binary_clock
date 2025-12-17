@@ -96,12 +96,6 @@ pub fn build(b: *std.Build) void {
     // by passing `--prefix` or `-p`.
     b.installArtifact(exe);
 
-    b.installFile("test.ttf", "bin/test.ttf");
-    b.installFile("vertex.metal", "bin/vertex.metal");
-    b.installFile("fragment.metal", "bin/fragment.metal");
-    b.installFile("tex_vertex.metal", "bin/tex_vertex.metal");
-    b.installFile("tex_fragment.metal", "bin/tex_fragment.metal");
-
     // This creates a top level step. Top level steps have a name and can be
     // invoked by name when running `zig build` (e.g. `zig build run`).
     // This will evaluate the `run` step rather than the default step.
@@ -127,6 +121,24 @@ pub fn build(b: *std.Build) void {
     if (b.args) |args| {
         run_cmd.addArgs(args);
     }
+
+    b.installFile("test.ttf", "bin/test.ttf");
+    b.installFile("vertex.metal", "bin/vertex.metal");
+    b.installFile("fragment.metal", "bin/fragment.metal");
+    b.installFile("tex_vertex.metal", "bin/tex_vertex.metal");
+    b.installFile("tex_fragment.metal", "bin/tex_fragment.metal");
+
+    const text_example_exe = b.addExecutable(.{
+        .name = "text_example",
+        .root_module = b.createModule(.{ .root_source_file = b.path("src/text_example.zig"), .target = target, .optimize = optimize, .imports = &.{
+            .{ .name = "sdl3", .module = sdl3.module("sdl3") },
+        } }),
+    });
+    b.installArtifact(text_example_exe);
+    const run_text_example_step = b.step("run-text-example", "Run the text example app");
+    const run_text_example_cmd = b.addRunArtifact(text_example_exe);
+    run_text_example_step.dependOn(&run_text_example_cmd.step);
+    run_text_example_step.dependOn(b.getInstallStep());
 
     // Creates an executable that will run `test` blocks from the provided module.
     // Here `mod` needs to define a target, which is why earlier we made sure to
