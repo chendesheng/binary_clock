@@ -158,12 +158,13 @@ fn createTexture(gpu: Device, surf: sdl3.surface.Surface) !Texture {
     });
 }
 
-fn createTexBuffer(gpu: Device, char: u8) !struct { Texture, Surface } {
+fn createTexBuffer(gpu: Device, char: u8) !struct { Texture, f32, f32 } {
     const font = try ttf.Font.init("test.ttf", 50);
     defer font.deinit();
     font.setHinting(.mono);
 
     const surf, _ = try font.getGlyphImage(char);
+    defer surf.deinit();
 
     const buf = try Buffer.initFromSurface(gpu, surf, .{ .vertex = true });
     defer buf.deinit();
@@ -184,7 +185,7 @@ fn createTexBuffer(gpu: Device, char: u8) !struct { Texture, Surface } {
     pass.end();
     try cmd.submit();
 
-    return .{ texture, surf };
+    return .{ texture, @floatFromInt(surf.getWidth()), @floatFromInt(surf.getHeight()) };
 }
 
 fn getCurrentLocalTime() !sdl3.time.DateTime {
@@ -245,21 +246,12 @@ pub fn main() !void {
     const pipeline = try createPipeline(allocator, gpu, swap_texture_format);
 
     var bmp_textures = [_]Texture{undefined} ** 10;
-    var surfes = [_]Surface{undefined} ** 10;
     var digitSizes = [_]struct { f32, f32 }{undefined} ** 10;
-    for (0..surfes.len) |i| {
-        const texture, const surf = try createTexBuffer(gpu, '0' + @as(u8, @intCast(i)));
+    for (0..bmp_textures.len) |i| {
+        const texture, const width, const height = try createTexBuffer(gpu, '0' + @as(u8, @intCast(i)));
         bmp_textures[i] = texture;
-        surfes[i] = surf;
-        digitSizes[i] = .{
-            @floatFromInt(surf.getWidth()), //
-            @floatFromInt(surf.getHeight()),
-        };
+        digitSizes[i] = .{ width, height };
     }
-
-    defer for (0..surfes.len) |i| {
-        surfes[i].deinit();
-    };
 
     var tex_vboes = [_]Buffer{undefined} ** 6;
     for (0..tex_vboes.len) |i| {
