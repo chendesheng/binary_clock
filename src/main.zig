@@ -21,6 +21,7 @@ const TextureSamplerBinding = sdl3.gpu.TextureSamplerBinding;
 const ColorTargetInfo = sdl3.gpu.ColorTargetInfo;
 const Surface = sdl3.surface.Surface;
 const CommandBuffer = sdl3.gpu.CommandBuffer;
+const Buffer = @import("./GPUBufer.zig");
 
 const Vertex = struct { x: f32, y: f32 };
 const Rect = struct { x: f32, y: f32, w: f32, h: f32 };
@@ -41,76 +42,11 @@ fn createShader(allocator: Allocator, gpu: Device, file: [:0]const u8, entry_poi
     });
 }
 
-pub fn TransferBuffer(comptime T: type) type {
-    return struct {
-        const Self = @This();
-        gpu: Device,
-        buf: sdl3.gpu.TransferBuffer,
-        size: u32,
-
-        pub fn init(gpu: Device, size: usize) !TransferBuffer(T) {
-            const bytes_size: u32 = @intCast(size * @sizeOf(T));
-            const buf = try gpu.createTransferBuffer(.{ .usage = .upload, .size = bytes_size });
-
-            return .{
-                .gpu = gpu,
-                .buf = buf,
-                .size = bytes_size,
-            };
-        }
-
-        pub fn deinit(self: *const Self) void {
-            self.gpu.releaseTransferBuffer(self.buf);
-        }
-
-        pub fn initFromSurface(gpu: Device, surf: Surface) !TransferBuffer(u8) {
-            return TransferBuffer(u8).init(gpu, @intCast(surf.getPitch() * surf.getHeight()));
-        }
-
-        pub fn copySurfaceToMapped(self: *const Self, surf: Surface) !void {
-            const mapped = try self.gpu.mapTransferBuffer(self.buf, false);
-            defer self.gpu.unmapTransferBuffer(self.buf);
-            if (surf.getPixels()) |pixels| {
-                @memcpy(mapped, pixels);
-            }
-        }
-
-        pub fn map(self: *const Self) ![]T {
-            const mapped = try self.gpu.mapTransferBuffer(self.buf, false);
-            return @alignCast(std.mem.bytesAsSlice(T, mapped[0..self.size]));
-        }
-
-        pub fn unmap(self: *const Self) void {
-            self.gpu.unmapTransferBuffer(self.buf);
-        }
-
-        pub fn uploadToBuffer(self: *const Self, cmd: CommandBuffer, buf: sdl3.gpu.Buffer, cycle: bool) void {
-            const pass = cmd.beginCopyPass();
-            pass.uploadToBuffer(.{ .offset = 0, .transfer_buffer = self.buf }, .{ .buffer = buf, .offset = 0, .size = self.size }, cycle);
-            pass.end();
-        }
-
-        pub fn uploadToTexture(self: *const Self, cmd: CommandBuffer, dst: TextureRegion, cycle: bool) void {
-            const src = TextureTransferInfo{
-                .transfer_buffer = self.buf,
-                .offset = 0,
-                .pixels_per_row = dst.width,
-                .rows_per_layer = dst.height,
-            };
-            const pass = cmd.beginCopyPass();
-            pass.uploadToTexture(src, dst, cycle);
-            pass.end();
-        }
-    };
-}
-
 const NUM_RECTS = 24;
 
-fn createVertexBuffer(gpu: Device) !sdl3.gpu.Buffer {
-    const transfer_buffer = try TransferBuffer(Rect).init(gpu, NUM_RECTS);
-    defer transfer_buffer.deinit();
-
-    var mapped = try transfer_buffer.map();
+fn createVertexBuffer(gpu: Device) !Buffer {
+    const buf = try Buffer.init(gpu, .{ .size = NUM_RECTS * @sizeOf(Rect), .usage = .{ .vertex = true } });
+    var mapped = try buf.mapTransferBuffer(Rect, false);
     for (0..NUM_RECTS) |i| {
         const x = i / 4;
         const y = i % 4;
@@ -121,28 +57,15 @@ fn createVertexBuffer(gpu: Device) !sdl3.gpu.Buffer {
             .h = 50,
         };
     }
-    transfer_buffer.unmap();
-
-    const vbo = try gpu.createBuffer(.{ .usage = .{ .vertex = true }, .size = transfer_buffer.size });
-    const cmd = try gpu.acquireCommandBuffer();
-    transfer_buffer.uploadToBuffer(cmd, vbo, false);
-    try cmd.submit();
-    return vbo;
+    buf.unmapTransferBuffer();
+    return buf;
 }
 
-fn createTexVertexBuffer(gpu: Device, i: usize) !sdl3.gpu.Buffer {
-    const transfer_buffer = try TransferBuffer(Rect).init(gpu, 1);
-    defer transfer_buffer.deinit();
-
-    var mapped = try transfer_buffer.map();
-    mapped[0] = .{ .x = @floatFromInt(10 + i * 60), .y = 250, .w = 50, .h = 50 };
-    transfer_buffer.unmap();
-
-    const vbo = try gpu.createBuffer(.{ .usage = .{ .vertex = true }, .size = transfer_buffer.size });
-    const cmd = try gpu.acquireCommandBuffer();
-    transfer_buffer.uploadToBuffer(cmd, vbo, false);
-    try cmd.submit();
-    return vbo;
+fn createTexVertexBuffer(gpu: Device, i: usize) !Buffer {
+    const buf = try Buffer.initFromData(gpu, Rect, &[_]Rect{
+        .{ .x = @floatFromInt(10 + i * 60), .y = 250, .w = 50, .h = 50 },
+    }, .{ .vertex = true });
+    return buf;
 }
 
 fn createTexShader(allocator: Allocator, gpu: Device, file: [:0]const u8, entry_point: [:0]const u8, stage: ShaderStage) !Shader {
@@ -241,17 +164,9 @@ fn createTexBuffer(gpu: Device, char: u8) !struct { Texture, Surface } {
     font.setHinting(.mono);
 
     const surf, _ = try font.getGlyphImage(char);
-    // std.debug.print("surf.getWidth(): {any}\n", .{surf.getWidth()});
-    // std.debug.print("surf.getHeight(): {any}\n", .{surf.getHeight()});
-    // std.debug.print("surf.getPitch(): {any}\n", .{surf.getPitch()});
-    // std.debug.print("surf.getFormat(): {any}\n", .{surf.getFormat()});
-    // defer surf.deinit();
 
-    // const surf = try sdl3.surface.Surface.initFromBmpFile("test.bmp");
-    // defer surf.deinit();
-
-    const transfer_buffer = try TransferBuffer(u8).initFromSurface(gpu, surf);
-    try transfer_buffer.copySurfaceToMapped(surf);
+    const buf = try Buffer.initFromSurface(gpu, surf, .{ .vertex = true });
+    defer buf.deinit();
 
     const texture = try createTexture(gpu, surf);
     const tex_dst = TextureRegion{
@@ -264,7 +179,9 @@ fn createTexBuffer(gpu: Device, char: u8) !struct { Texture, Surface } {
     };
 
     const cmd = try gpu.acquireCommandBuffer();
-    transfer_buffer.uploadToTexture(cmd, tex_dst, false);
+    const pass = cmd.beginCopyPass();
+    buf.uploadToTexture(pass, tex_dst, false);
+    pass.end();
     try cmd.submit();
 
     return .{ texture, surf };
@@ -323,6 +240,7 @@ pub fn main() !void {
     try gpu.claimWindow(window);
 
     const vbo = try createVertexBuffer(gpu);
+
     const swap_texture_format = try gpu.getSwapchainTextureFormat(window);
     const pipeline = try createPipeline(allocator, gpu, swap_texture_format);
 
@@ -343,10 +261,22 @@ pub fn main() !void {
         surfes[i].deinit();
     };
 
-    var tex_vboes = [_]sdl3.gpu.Buffer{undefined} ** 6;
+    var tex_vboes = [_]Buffer{undefined} ** 6;
     for (0..tex_vboes.len) |i| {
         tex_vboes[i] = try createTexVertexBuffer(gpu, i);
     }
+    defer for (0..tex_vboes.len) |i| {
+        tex_vboes[i].deinit();
+    };
+
+    var cmd = try gpu.acquireCommandBuffer();
+    const cp_pass = cmd.beginCopyPass();
+    vbo.uploadToBuffer(cp_pass, false);
+    for (0..tex_vboes.len) |i| {
+        tex_vboes[i].uploadToBuffer(cp_pass, false);
+    }
+    cp_pass.end();
+    try cmd.submit();
 
     const tex_pipeline = try createTexPipeline(allocator, gpu, swap_texture_format);
     const sampler = try createSampler(gpu);
@@ -371,7 +301,7 @@ pub fn main() !void {
             try updateDigitsToCurrentLocalTime(&digits);
         }
 
-        const cmd = try gpu.acquireCommandBuffer();
+        cmd = try gpu.acquireCommandBuffer();
         const texture, const width, const height = try cmd.acquireSwapchainTexture(window);
         const swap = texture orelse continue;
 
@@ -388,7 +318,7 @@ pub fn main() !void {
         setColorsFromDigits(&digits, &colors);
         cmd.pushVertexUniformData(1, @ptrCast(&colors));
         pass.bindGraphicsPipeline(pipeline);
-        pass.bindVertexBuffers(0, &[_]BufferBinding{.{ .buffer = vbo, .offset = 0 }});
+        pass.bindVertexBuffers(0, &vbo.createBufferBindings(0));
         pass.drawPrimitives(6, NUM_RECTS, 0, 0);
 
         pass.bindGraphicsPipeline(tex_pipeline);
@@ -396,7 +326,7 @@ pub fn main() !void {
             const digit = digits[i];
             cmd.pushVertexUniformData(1, @ptrCast(&digit));
             cmd.pushVertexUniformData(2, @ptrCast(&digitSizes[digit]));
-            pass.bindVertexBuffers(0, &[_]BufferBinding{.{ .buffer = tex_vboes[i], .offset = 0 }});
+            pass.bindVertexBuffers(0, &tex_vboes[i].createBufferBindings(0));
             pass.bindFragmentSamplers(0, &[_]TextureSamplerBinding{.{
                 .texture = bmp_textures[digit],
                 .sampler = sampler,
