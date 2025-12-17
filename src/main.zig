@@ -21,7 +21,7 @@ const TextureSamplerBinding = sdl3.gpu.TextureSamplerBinding;
 const ColorTargetInfo = sdl3.gpu.ColorTargetInfo;
 const Surface = sdl3.surface.Surface;
 const CommandBuffer = sdl3.gpu.CommandBuffer;
-const Buffer = @import("./GPUBufer.zig");
+const TransferBuffer = @import("./TransferBufer.zig");
 const CopyPass = sdl3.gpu.CopyPass;
 
 const Vertex = struct { x: f32, y: f32 };
@@ -56,9 +56,9 @@ fn createShader(allocator: Allocator, gpu: Device, file: [:0]const u8, entry_poi
 const NUM_RECTS = 24;
 const NUM_DIGITS = 6;
 
-fn createVertexBuffer(gpu: Device) !Buffer {
-    const buf = try Buffer.init(gpu, .{ .size = NUM_RECTS * @sizeOf(Rect), .usage = .{ .vertex = true } });
-    var mapped = try buf.mapTransferBuffer(Rect, false);
+fn createVertexBuffer(gpu: Device) !TransferBuffer {
+    const transfer_buf = try TransferBuffer.init(gpu, .{ .size = NUM_RECTS * @sizeOf(Rect), .usage = .upload });
+    var mapped = try transfer_buf.map(Rect, false);
     for (0..NUM_RECTS) |i| {
         const x = i / 4;
         const y = i % 4;
@@ -69,26 +69,19 @@ fn createVertexBuffer(gpu: Device) !Buffer {
             .h = 50,
         };
     }
-    buf.unmapTransferBuffer();
-    return buf;
+    transfer_buf.unmap();
+    return transfer_buf;
 }
 
-fn createDigitsVertexBuffer(gpu: Device) !Buffer {
-    const buf = try Buffer.init(gpu, .{ .size = NUM_DIGITS * @sizeOf(Rect), .usage = .{ .vertex = true } });
-    var mapped = try buf.mapTransferBuffer(Rect, false);
-    defer buf.unmapTransferBuffer();
+fn createDigitsVertexBuffer(gpu: Device) !TransferBuffer {
+    const buf = try TransferBuffer.init(gpu, .{ .size = NUM_DIGITS * @sizeOf(Rect), .usage = .upload });
+    var mapped = try buf.map(Rect, false);
+    defer buf.unmap();
     for (0..NUM_DIGITS) |i| {
         mapped[i] = .{ .x = @floatFromInt(10 + i * 60), .y = 250, .w = 50, .h = 50 };
     }
     return buf;
 }
-
-// fn createTexVertexBuffer(gpu: Device, i: usize) !Buffer {
-//     const buf = try Buffer.initFromData(gpu, Rect, &[_]Rect{
-//         .{ .x = @floatFromInt(10 + i * 60), .y = 250, .w = 50, .h = 50 },
-//     }, .{ .vertex = true });
-//     return buf;
-// }
 
 fn createTexShader(allocator: Allocator, gpu: Device, file: [:0]const u8, entry_point: [:0]const u8, stage: ShaderStage) !Shader {
     const f = try std.fs.cwd().openFile(file, .{});
@@ -223,17 +216,18 @@ const CharBuffer = struct {
     gpu: Device,
     texture: Texture,
     size: struct { f32, f32 },
-    buffer: Buffer,
+    buffer: TransferBuffer,
 
     fn init(gpu: Device, char: u8) !CharBuffer {
         const font = try ttf.Font.init("test.ttf", 50);
+        // try font.setSdf(true);
         defer font.deinit();
         // font.setHinting(.mono);
 
         const surf, _ = try font.getGlyphImage(char);
         defer surf.deinit();
 
-        const buf = try Buffer.initFromSurface(gpu, surf, .{ .vertex = true });
+        const buf = try TransferBuffer.initFromSurface(gpu, surf, .upload);
         const texture = try createTexture(gpu, surf);
 
         return .{
@@ -264,9 +258,9 @@ const CharBuffer = struct {
     }
 };
 
-fn updateDigitsBuffer(digits: *const [NUM_DIGITS]Digit, buffer: Buffer) !void {
-    const mapped = try buffer.mapTransferBuffer(Digit, false);
-    defer buffer.unmapTransferBuffer();
+fn updateDigitsBuffer(digits: *const [NUM_DIGITS]Digit, buffer: TransferBuffer) !void {
+    const mapped = try buffer.map(Digit, false);
+    defer buffer.unmap();
     @memcpy(mapped, digits);
 }
 
@@ -294,11 +288,14 @@ pub fn main() !void {
 
     try gpu.claimWindow(window);
 
-    const vbo = try createVertexBuffer(gpu);
-    defer vbo.deinit();
+    const vbo_transfer = try createVertexBuffer(gpu);
+    defer vbo_transfer.deinit();
+    const vbo = try gpu.createBuffer(.{ .size = vbo_transfer.size, .usage = .{ .vertex = true } });
+    defer gpu.releaseBuffer(vbo);
 
     const swap_texture_format = try gpu.getSwapchainTextureFormat(window);
     const pipeline = try createPipeline(allocator, gpu, swap_texture_format);
+    defer gpu.releaseGraphicsPipeline(pipeline);
 
     var allDigits = [_]CharBuffer{undefined} ** 10;
     for (0..allDigits.len) |i| {
@@ -308,13 +305,15 @@ pub fn main() !void {
         digit.deinit();
     };
 
-    var vbo_digits = try createDigitsVertexBuffer(gpu);
-    defer vbo_digits.deinit();
+    var vbo_digits_transfer = try createDigitsVertexBuffer(gpu);
+    defer vbo_digits_transfer.deinit();
+    const vbo_digits = try gpu.createBuffer(.{ .size = vbo_digits_transfer.size, .usage = .{ .vertex = true } });
+    defer gpu.releaseBuffer(vbo_digits);
 
     var cmd = try gpu.acquireCommandBuffer();
     const cp_pass = cmd.beginCopyPass();
-    vbo.uploadToBuffer(cp_pass, false);
-    vbo_digits.uploadToBuffer(cp_pass, false);
+    vbo_transfer.uploadToBuffer(cp_pass, vbo, false);
+    vbo_digits_transfer.uploadToBuffer(cp_pass, vbo_digits, false);
     for (allDigits) |digit| {
         digit.uploadToTexture(cp_pass);
     }
@@ -322,12 +321,15 @@ pub fn main() !void {
     try cmd.submit();
 
     const tex_pipeline = try createPipelineForDigits(allocator, gpu, swap_texture_format);
+    defer gpu.releaseGraphicsPipeline(tex_pipeline);
     const sampler = try createSampler(gpu);
     var last_tick: u64 = 0;
 
     var digits = [_]Digit{undefined} ** NUM_DIGITS;
-    var digits_buffer = try Buffer.init(gpu, .{ .size = NUM_DIGITS * @sizeOf(Digit), .usage = .{ .vertex = true } });
-    defer digits_buffer.deinit();
+    var digits_transfer_buffer = try TransferBuffer.init(gpu, .{ .size = NUM_DIGITS * @sizeOf(Digit), .usage = .upload });
+    defer digits_transfer_buffer.deinit();
+    const digits_buffer = try gpu.createBuffer(.{ .size = digits_transfer_buffer.size, .usage = .{ .vertex = true } });
+    defer gpu.releaseBuffer(digits_buffer);
     var colors: u32 = 0;
 
     var quit = false;
@@ -346,9 +348,9 @@ pub fn main() !void {
         if (last_tick == 0 or (now - last_tick > 1000)) {
             last_tick = now;
             try updateDigitsToCurrentLocalTime(&digits, allDigits);
-            try updateDigitsBuffer(&digits, digits_buffer);
+            try updateDigitsBuffer(&digits, digits_transfer_buffer);
             const copy_pass = cmd.beginCopyPass();
-            digits_buffer.uploadToBuffer(copy_pass, false);
+            digits_transfer_buffer.uploadToBuffer(copy_pass, digits_buffer, false);
             copy_pass.end();
             colors = getColorsFromDigits(&digits);
         }
@@ -367,14 +369,23 @@ pub fn main() !void {
         // render quads
         cmd.pushVertexUniformData(1, @ptrCast(&colors));
         pass.bindGraphicsPipeline(pipeline);
-        pass.bindVertexBuffers(0, &vbo.createBufferBindings(0));
+        pass.bindVertexBuffers(0, &[_]BufferBinding{.{
+            .buffer = vbo,
+            .offset = 0,
+        }});
         pass.drawPrimitives(6, NUM_RECTS, 0, 0);
 
         // render digits
         pass.bindGraphicsPipeline(tex_pipeline);
         pass.bindVertexBuffers(0, &[_]BufferBinding{
-            vbo_digits.createBufferBinding(0),
-            digits_buffer.createBufferBinding(0),
+            .{
+                .buffer = vbo_digits,
+                .offset = 0,
+            },
+            .{
+                .buffer = digits_buffer,
+                .offset = 0,
+            },
         });
         for (0..allDigits.len) |i| {
             pass.bindFragmentSamplers(@intCast(i), &[_]TextureSamplerBinding{.{
