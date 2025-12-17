@@ -118,14 +118,16 @@ const premultiplied_alpha_blending = ColorTargetBlendState{
 
 fn createPipeline(allocator: Allocator, gpu: Device, texture_format: TextureFormat) !GraphicsPipeline {
     const vs = try createShader(allocator, gpu, "vertex.metal", "s_main", .vertex);
+    defer gpu.releaseShader(vs);
     const fs = try createShader(allocator, gpu, "fragment.metal", "s_main", .fragment);
+    defer gpu.releaseShader(fs);
     return gpu.createGraphicsPipeline(.{
         .vertex_shader = vs,
         .primitive_type = .triangle_list,
         .vertex_input_state = .{
             .vertex_buffer_descriptions = &[_]VertexBufferDescription{
                 .{ .slot = 0, .pitch = @sizeOf(Rect), .input_rate = .instance },
-            }, // please break line
+            },
             .vertex_attributes = &[_]VertexAttribute{
                 .{ .location = 0, .buffer_slot = 0, .offset = @offsetOf(Rect, "x"), .format = VertexElementFormat.f32x2 },
                 .{ .location = 1, .buffer_slot = 0, .offset = @offsetOf(Rect, "w"), .format = VertexElementFormat.f32x2 },
@@ -141,7 +143,9 @@ fn createPipeline(allocator: Allocator, gpu: Device, texture_format: TextureForm
 
 fn createPipelineForDigits(allocator: Allocator, gpu: Device, texture_format: TextureFormat) !GraphicsPipeline {
     const vs = try createTexShader(allocator, gpu, "tex_vertex.metal", "s_main", .vertex);
+    defer gpu.releaseShader(vs);
     const fs = try createTexShader(allocator, gpu, "tex_fragment.metal", "s_main", .fragment);
+    defer gpu.releaseShader(fs);
     return gpu.createGraphicsPipeline(.{
         .vertex_shader = vs,
         .primitive_type = .triangle_list,
