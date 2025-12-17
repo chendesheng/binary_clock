@@ -22,6 +22,7 @@ const ColorTargetInfo = sdl3.gpu.ColorTargetInfo;
 const Surface = sdl3.surface.Surface;
 const CommandBuffer = sdl3.gpu.CommandBuffer;
 const Buffer = @import("./GPUBufer.zig");
+const CopyPass = sdl3.gpu.CopyPass;
 
 const Vertex = struct { x: f32, y: f32 };
 const Rect = struct { x: f32, y: f32, w: f32, h: f32 };
@@ -158,36 +159,6 @@ fn createTexture(gpu: Device, surf: sdl3.surface.Surface) !Texture {
     });
 }
 
-fn createTexBuffer(gpu: Device, char: u8) !struct { Texture, f32, f32 } {
-    const font = try ttf.Font.init("test.ttf", 50);
-    defer font.deinit();
-    font.setHinting(.mono);
-
-    const surf, _ = try font.getGlyphImage(char);
-    defer surf.deinit();
-
-    const buf = try Buffer.initFromSurface(gpu, surf, .{ .vertex = true });
-    defer buf.deinit();
-
-    const texture = try createTexture(gpu, surf);
-    const tex_dst = TextureRegion{
-        .texture = texture,
-        .x = 0,
-        .y = 0,
-        .width = @intCast(surf.getWidth()),
-        .height = @intCast(surf.getHeight()),
-        .depth = 0,
-    };
-
-    const cmd = try gpu.acquireCommandBuffer();
-    const pass = cmd.beginCopyPass();
-    buf.uploadToTexture(pass, tex_dst, false);
-    pass.end();
-    try cmd.submit();
-
-    return .{ texture, @floatFromInt(surf.getWidth()), @floatFromInt(surf.getHeight()) };
-}
-
 fn getCurrentLocalTime() !sdl3.time.DateTime {
     const current = try sdl3.time.Time.getCurrent();
     return try sdl3.time.DateTime.fromTime(current, true);
@@ -215,6 +186,51 @@ fn setColorsFromDigits(digits: *const [6]u8, colors: *u32) void {
         }
     }
 }
+
+const CharBuffer = struct {
+    gpu: Device,
+    texture: Texture,
+    size: struct { f32, f32 },
+    buffer: Buffer,
+
+    fn init(gpu: Device, char: u8) !CharBuffer {
+        const font = try ttf.Font.init("test.ttf", 50);
+        defer font.deinit();
+        // font.setHinting(.mono);
+
+        const surf, _ = try font.getGlyphImage(char);
+        defer surf.deinit();
+
+        const buf = try Buffer.initFromSurface(gpu, surf, .{ .vertex = true });
+        const texture = try createTexture(gpu, surf);
+
+        return .{
+            .gpu = gpu,
+            .texture = texture,
+            .size = .{ @floatFromInt(surf.getWidth()), @floatFromInt(surf.getHeight()) },
+            .buffer = buf,
+        };
+    }
+
+    fn deinit(self: *const CharBuffer) void {
+        self.gpu.releaseTexture(self.texture);
+        self.buffer.deinit();
+    }
+
+    fn uploadToTexture(self: *const CharBuffer, cp_pass: CopyPass) void {
+        const texture = self.texture;
+        const width, const height = self.size;
+        const tex_dst = TextureRegion{
+            .texture = texture,
+            .x = 0,
+            .y = 0,
+            .width = @intFromFloat(width),
+            .height = @intFromFloat(height),
+            .depth = 0,
+        };
+        self.buffer.uploadToTexture(cp_pass, tex_dst, false);
+    }
+};
 
 pub fn main() !void {
     defer sdl3.shutdown();
@@ -245,20 +261,20 @@ pub fn main() !void {
     const swap_texture_format = try gpu.getSwapchainTextureFormat(window);
     const pipeline = try createPipeline(allocator, gpu, swap_texture_format);
 
-    var bmp_textures = [_]Texture{undefined} ** 10;
-    var digitSizes = [_]struct { f32, f32 }{undefined} ** 10;
-    for (0..bmp_textures.len) |i| {
-        const texture, const width, const height = try createTexBuffer(gpu, '0' + @as(u8, @intCast(i)));
-        bmp_textures[i] = texture;
-        digitSizes[i] = .{ width, height };
+    var allDigits = [_]CharBuffer{undefined} ** 10;
+    for (0..allDigits.len) |i| {
+        allDigits[i] = try CharBuffer.init(gpu, '0' + @as(u8, @intCast(i)));
     }
+    defer for (allDigits) |digit| {
+        digit.deinit();
+    };
 
     var tex_vboes = [_]Buffer{undefined} ** 6;
     for (0..tex_vboes.len) |i| {
         tex_vboes[i] = try createTexVertexBuffer(gpu, i);
     }
-    defer for (0..tex_vboes.len) |i| {
-        tex_vboes[i].deinit();
+    defer for (tex_vboes) |buf| {
+        buf.deinit();
     };
 
     var cmd = try gpu.acquireCommandBuffer();
@@ -266,6 +282,9 @@ pub fn main() !void {
     vbo.uploadToBuffer(cp_pass, false);
     for (0..tex_vboes.len) |i| {
         tex_vboes[i].uploadToBuffer(cp_pass, false);
+    }
+    for (allDigits) |digit| {
+        digit.uploadToTexture(cp_pass);
     }
     cp_pass.end();
     try cmd.submit();
@@ -317,10 +336,10 @@ pub fn main() !void {
         for (0..digits.len) |i| {
             const digit = digits[i];
             cmd.pushVertexUniformData(1, @ptrCast(&digit));
-            cmd.pushVertexUniformData(2, @ptrCast(&digitSizes[digit]));
+            cmd.pushVertexUniformData(2, @ptrCast(&allDigits[digit].size));
             pass.bindVertexBuffers(0, &tex_vboes[i].createBufferBindings(0));
             pass.bindFragmentSamplers(0, &[_]TextureSamplerBinding{.{
-                .texture = bmp_textures[digit],
+                .texture = allDigits[digit].texture,
                 .sampler = sampler,
             }});
             pass.drawPrimitives(6, 1, 0, 0);
