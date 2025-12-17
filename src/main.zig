@@ -200,17 +200,19 @@ fn updateDigitsToCurrentLocalTime(digits: *[NUM_DIGITS]Digit, allDigits: [10]Cha
     digits[5] = Digit.init(@intCast(time.second % 10), allDigits);
 }
 
-fn setColorsFromDigits(digits: *const [NUM_DIGITS]Digit, colors: *u32) void {
+fn getColorsFromDigits(digits: *const [NUM_DIGITS]Digit) u32 {
+    var colors: u32 = 0;
     for (0..NUM_RECTS) |i| {
         const x = i / 4;
         const y = i % 4;
         const mask = @as(u32, 1) << @intCast(i);
         if (digits[x].n & (@as(u32, 1) << @intCast(3 - y)) != 0) {
-            colors.* |= mask;
+            colors |= mask;
         } else {
-            colors.* &= ~mask;
+            colors &= ~mask;
         }
     }
+    return colors;
 }
 
 const CharBuffer = struct {
@@ -322,6 +324,7 @@ pub fn main() !void {
     var digits = [_]Digit{undefined} ** NUM_DIGITS;
     var digits_buffer = try Buffer.init(gpu, .{ .size = NUM_DIGITS * @sizeOf(Digit), .usage = .{ .vertex = true } });
     defer digits_buffer.deinit();
+    var colors: u32 = 0;
 
     var quit = false;
     while (!quit) {
@@ -343,24 +346,21 @@ pub fn main() !void {
             const copy_pass = cmd.beginCopyPass();
             digits_buffer.uploadToBuffer(copy_pass, false);
             copy_pass.end();
+            colors = getColorsFromDigits(&digits);
         }
 
         const texture, const width, const height = try cmd.acquireSwapchainTexture(window);
         const swap = texture orelse continue;
 
-        const ct = [_]ColorTargetInfo{.{
+        const pass = cmd.beginRenderPass(&[_]ColorTargetInfo{.{
             .texture = swap,
             .load = .clear,
             .clear_color = .{ .r = 0.0, .g = 0.0, .b = 0.0, .a = 1.0 },
-        }};
-
-        const pass = cmd.beginRenderPass(&ct, null);
+        }}, null);
 
         cmd.pushVertexUniformData(0, @ptrCast(&[_]f32{ @floatFromInt(width), @floatFromInt(height) }));
 
         // render quads
-        var colors: u32 = 0;
-        setColorsFromDigits(&digits, &colors);
         cmd.pushVertexUniformData(1, @ptrCast(&colors));
         pass.bindGraphicsPipeline(pipeline);
         pass.bindVertexBuffers(0, &vbo.createBufferBindings(0));
