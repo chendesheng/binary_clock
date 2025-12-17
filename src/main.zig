@@ -20,6 +20,7 @@ const ColorTargetBlendState = sdl3.gpu.ColorTargetBlendState;
 const TextureSamplerBinding = sdl3.gpu.TextureSamplerBinding;
 const ColorTargetInfo = sdl3.gpu.ColorTargetInfo;
 const Surface = sdl3.surface.Surface;
+const CommandBuffer = sdl3.gpu.CommandBuffer;
 
 const Vertex = struct { x: f32, y: f32 };
 const Rect = struct { x: f32, y: f32, w: f32, h: f32 };
@@ -45,57 +46,60 @@ pub fn TransferBuffer(comptime T: type) type {
         const Self = @This();
         gpu: Device,
         buf: sdl3.gpu.TransferBuffer,
-        mapped: []T,
         size: u32,
 
         pub fn init(gpu: Device, size: usize) !TransferBuffer(T) {
             const bytes_size: u32 = @intCast(size * @sizeOf(T));
             const buf = try gpu.createTransferBuffer(.{ .usage = .upload, .size = bytes_size });
-            const mapped = try gpu.mapTransferBuffer(buf, false);
-
-            const mapped_t: []T = @alignCast(std.mem.bytesAsSlice(T, mapped[0..bytes_size]));
 
             return .{
                 .gpu = gpu,
                 .buf = buf,
-                .mapped = mapped_t,
                 .size = bytes_size,
             };
         }
 
-        pub fn initFromSurface(gpu: Device, surf: Surface) !TransferBuffer(u8) {
-            const self = try TransferBuffer(u8).init(gpu, @intCast(surf.getPitch() * surf.getHeight()));
-            if (surf.getPixels()) |pixels| {
-                @memcpy(self.mapped, pixels);
-            }
-            return self;
+        pub fn deinit(self: *const Self) void {
+            self.gpu.releaseTransferBuffer(self.buf);
         }
 
-        pub fn deinit(self: *const Self) void {
+        pub fn initFromSurface(gpu: Device, surf: Surface) !TransferBuffer(u8) {
+            return TransferBuffer(u8).init(gpu, @intCast(surf.getPitch() * surf.getHeight()));
+        }
+
+        pub fn copySurfaceToMapped(self: *const Self, surf: Surface) !void {
+            const mapped = try self.gpu.mapTransferBuffer(self.buf, false);
+            defer self.gpu.unmapTransferBuffer(self.buf);
+            if (surf.getPixels()) |pixels| {
+                @memcpy(mapped, pixels);
+            }
+        }
+
+        pub fn map(self: *const Self) ![]T {
+            const mapped = try self.gpu.mapTransferBuffer(self.buf, false);
+            return @alignCast(std.mem.bytesAsSlice(T, mapped[0..self.size]));
+        }
+
+        pub fn unmap(self: *const Self) void {
             self.gpu.unmapTransferBuffer(self.buf);
         }
 
-        pub fn uploadToBuffer(self: *const Self, buf: sdl3.gpu.Buffer, cycle: bool) !void {
-            const cmd = try self.gpu.acquireCommandBuffer();
+        pub fn uploadToBuffer(self: *const Self, cmd: CommandBuffer, buf: sdl3.gpu.Buffer, cycle: bool) void {
             const pass = cmd.beginCopyPass();
-
             pass.uploadToBuffer(.{ .offset = 0, .transfer_buffer = self.buf }, .{ .buffer = buf, .offset = 0, .size = self.size }, cycle);
             pass.end();
-            try cmd.submit();
         }
 
-        pub fn uploadToTexture(self: *const Self, dst: TextureRegion, cycle: bool) !void {
+        pub fn uploadToTexture(self: *const Self, cmd: CommandBuffer, dst: TextureRegion, cycle: bool) void {
             const src = TextureTransferInfo{
                 .transfer_buffer = self.buf,
                 .offset = 0,
                 .pixels_per_row = dst.width,
                 .rows_per_layer = dst.height,
             };
-            const cmd = try self.gpu.acquireCommandBuffer();
             const pass = cmd.beginCopyPass();
             pass.uploadToTexture(src, dst, cycle);
             pass.end();
-            try cmd.submit();
         }
     };
 }
@@ -106,19 +110,23 @@ fn createVertexBuffer(gpu: Device) !sdl3.gpu.Buffer {
     const transfer_buffer = try TransferBuffer(Rect).init(gpu, NUM_RECTS);
     defer transfer_buffer.deinit();
 
+    var mapped = try transfer_buffer.map();
     for (0..NUM_RECTS) |i| {
         const x = i / 4;
         const y = i % 4;
-        transfer_buffer.mapped[i] = .{
+        mapped[i] = .{
             .x = @floatFromInt(10 + x * (50 + 10)), //
             .y = @floatFromInt(10 + y * (50 + 10)),
             .w = 50,
             .h = 50,
         };
     }
+    transfer_buffer.unmap();
 
     const vbo = try gpu.createBuffer(.{ .usage = .{ .vertex = true }, .size = transfer_buffer.size });
-    try transfer_buffer.uploadToBuffer(vbo, false);
+    const cmd = try gpu.acquireCommandBuffer();
+    transfer_buffer.uploadToBuffer(cmd, vbo, false);
+    try cmd.submit();
     return vbo;
 }
 
@@ -126,10 +134,14 @@ fn createTexVertexBuffer(gpu: Device, i: usize) !sdl3.gpu.Buffer {
     const transfer_buffer = try TransferBuffer(Rect).init(gpu, 1);
     defer transfer_buffer.deinit();
 
-    transfer_buffer.mapped[0] = .{ .x = @floatFromInt(10 + i * 60), .y = 250, .w = 50, .h = 50 };
+    var mapped = try transfer_buffer.map();
+    mapped[0] = .{ .x = @floatFromInt(10 + i * 60), .y = 250, .w = 50, .h = 50 };
+    transfer_buffer.unmap();
 
     const vbo = try gpu.createBuffer(.{ .usage = .{ .vertex = true }, .size = transfer_buffer.size });
-    try transfer_buffer.uploadToBuffer(vbo, false);
+    const cmd = try gpu.acquireCommandBuffer();
+    transfer_buffer.uploadToBuffer(cmd, vbo, false);
+    try cmd.submit();
     return vbo;
 }
 
@@ -239,7 +251,7 @@ fn createTexBuffer(gpu: Device, char: u8) !struct { Texture, Surface } {
     // defer surf.deinit();
 
     const transfer_buffer = try TransferBuffer(u8).initFromSurface(gpu, surf);
-    defer transfer_buffer.deinit();
+    try transfer_buffer.copySurfaceToMapped(surf);
 
     const texture = try createTexture(gpu, surf);
     const tex_dst = TextureRegion{
@@ -251,7 +263,9 @@ fn createTexBuffer(gpu: Device, char: u8) !struct { Texture, Surface } {
         .depth = 0,
     };
 
-    try transfer_buffer.uploadToTexture(tex_dst, false);
+    const cmd = try gpu.acquireCommandBuffer();
+    transfer_buffer.uploadToTexture(cmd, tex_dst, false);
+    try cmd.submit();
 
     return .{ texture, surf };
 }
