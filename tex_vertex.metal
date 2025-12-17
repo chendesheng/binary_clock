@@ -3,6 +3,8 @@ using namespace metal;
 struct VSIn {
   float2 position[[attribute(0)]];
   float2 size[[attribute(1)]];
+  uint n[[attribute(2)]];
+  float2 font_size[[attribute(3)]];
 };
 
 struct VSOut {
@@ -51,19 +53,18 @@ float2 pixelToNDC(float2 p, float2 viewport) {
     return float2((p.x / viewport.x) * 2.0 - 1.0 ,1.0 - (p.y / viewport.y) * 2.0);
 }
 
-vertex VSOut s_main(VSIn in [[stage_in]], uint vid [[vertex_id]],
-                    constant float2 &ss [[buffer(0)]],
-                    constant uint &digit [[buffer(1)]],
-                    constant float2 &digitSize [[buffer(2)]]) {
+vertex VSOut s_main(VSIn in [[stage_in]],
+                    uint vid [[vertex_id]],
+                    constant float2 &ss [[buffer(0)]]) {
   VSOut o;
 
   uint i = vid % 6;
 
-  o.digit = digit;
+  o.digit = in.n;
 
   float x, y;
 
-  float2 offset = (in.size - digitSize) / 2.0;
+  float2 offset = (in.size - in.font_size) / 2.0;
 
   if (i == 0 || i == 5) {
     x = in.position.x + offset.x;

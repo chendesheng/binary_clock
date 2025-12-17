@@ -26,6 +26,16 @@ const CopyPass = sdl3.gpu.CopyPass;
 
 const Vertex = struct { x: f32, y: f32 };
 const Rect = struct { x: f32, y: f32, w: f32, h: f32 };
+const Digit = struct {
+    n: u32,
+    font_size: struct { f32, f32 },
+    fn init(n: u32, allDigits: [10]CharBuffer) Digit {
+        return Digit{
+            .n = n,
+            .font_size = allDigits[n].size,
+        };
+    }
+};
 
 fn createShader(allocator: Allocator, gpu: Device, file: [:0]const u8, entry_point: [:0]const u8, stage: ShaderStage) !Shader {
     const f = try std.fs.cwd().openFile(file, .{});
@@ -44,6 +54,7 @@ fn createShader(allocator: Allocator, gpu: Device, file: [:0]const u8, entry_poi
 }
 
 const NUM_RECTS = 24;
+const NUM_DIGITS = 6;
 
 fn createVertexBuffer(gpu: Device) !Buffer {
     const buf = try Buffer.init(gpu, .{ .size = NUM_RECTS * @sizeOf(Rect), .usage = .{ .vertex = true } });
@@ -62,12 +73,22 @@ fn createVertexBuffer(gpu: Device) !Buffer {
     return buf;
 }
 
-fn createTexVertexBuffer(gpu: Device, i: usize) !Buffer {
-    const buf = try Buffer.initFromData(gpu, Rect, &[_]Rect{
-        .{ .x = @floatFromInt(10 + i * 60), .y = 250, .w = 50, .h = 50 },
-    }, .{ .vertex = true });
+fn createDigitsVertexBuffer(gpu: Device) !Buffer {
+    const buf = try Buffer.init(gpu, .{ .size = NUM_DIGITS * @sizeOf(Rect), .usage = .{ .vertex = true } });
+    var mapped = try buf.mapTransferBuffer(Rect, false);
+    defer buf.unmapTransferBuffer();
+    for (0..NUM_DIGITS) |i| {
+        mapped[i] = .{ .x = @floatFromInt(10 + i * 60), .y = 250, .w = 50, .h = 50 };
+    }
     return buf;
 }
+
+// fn createTexVertexBuffer(gpu: Device, i: usize) !Buffer {
+//     const buf = try Buffer.initFromData(gpu, Rect, &[_]Rect{
+//         .{ .x = @floatFromInt(10 + i * 60), .y = 250, .w = 50, .h = 50 },
+//     }, .{ .vertex = true });
+//     return buf;
+// }
 
 fn createTexShader(allocator: Allocator, gpu: Device, file: [:0]const u8, entry_point: [:0]const u8, stage: ShaderStage) !Shader {
     const f = try std.fs.cwd().openFile(file, .{});
@@ -81,8 +102,8 @@ fn createTexShader(allocator: Allocator, gpu: Device, file: [:0]const u8, entry_
         .format = .{ .msl = true },
         .entry_point = entry_point,
         .stage = stage,
-        .num_uniform_buffers = 3,
-        .num_samplers = 1,
+        .num_uniform_buffers = 1,
+        .num_samplers = 10,
     });
 }
 
@@ -118,17 +139,22 @@ fn createPipeline(allocator: Allocator, gpu: Device, texture_format: TextureForm
     });
 }
 
-fn createTexPipeline(allocator: Allocator, gpu: Device, texture_format: TextureFormat) !GraphicsPipeline {
+fn createPipelineForDigits(allocator: Allocator, gpu: Device, texture_format: TextureFormat) !GraphicsPipeline {
     const vs = try createTexShader(allocator, gpu, "tex_vertex.metal", "s_main", .vertex);
     const fs = try createTexShader(allocator, gpu, "tex_fragment.metal", "s_main", .fragment);
     return gpu.createGraphicsPipeline(.{
         .vertex_shader = vs,
         .primitive_type = .triangle_list,
         .vertex_input_state = .{
-            .vertex_buffer_descriptions = &[_]VertexBufferDescription{.{ .slot = 0, .pitch = @sizeOf(Rect), .input_rate = .instance }},
+            .vertex_buffer_descriptions = &[_]VertexBufferDescription{
+                .{ .slot = 0, .pitch = @sizeOf(Rect), .input_rate = .instance },
+                .{ .slot = 1, .pitch = @sizeOf(Digit), .input_rate = .instance },
+            },
             .vertex_attributes = &[_]VertexAttribute{
                 .{ .location = 0, .buffer_slot = 0, .offset = @offsetOf(Rect, "x"), .format = VertexElementFormat.f32x2 },
                 .{ .location = 1, .buffer_slot = 0, .offset = @offsetOf(Rect, "w"), .format = VertexElementFormat.f32x2 },
+                .{ .location = 2, .buffer_slot = 1, .offset = @offsetOf(Digit, "n"), .format = VertexElementFormat.u32x1 }, // FIXME: no u8?
+                .{ .location = 3, .buffer_slot = 1, .offset = @offsetOf(Digit, "font_size"), .format = VertexElementFormat.f32x2 },
             },
         },
         .fragment_shader = fs,
@@ -164,22 +190,22 @@ fn getCurrentLocalTime() !sdl3.time.DateTime {
     return try sdl3.time.DateTime.fromTime(current, true);
 }
 
-fn updateDigitsToCurrentLocalTime(digits: *[6]u8) !void {
+fn updateDigitsToCurrentLocalTime(digits: *[NUM_DIGITS]Digit, allDigits: [10]CharBuffer) !void {
     const time = try getCurrentLocalTime();
-    digits[0] = @intCast(time.hour / 10);
-    digits[1] = @intCast(time.hour % 10);
-    digits[2] = @intCast(time.minute / 10);
-    digits[3] = @intCast(time.minute % 10);
-    digits[4] = @intCast(time.second / 10);
-    digits[5] = @intCast(time.second % 10);
+    digits[0] = Digit.init(@intCast(time.hour / 10), allDigits);
+    digits[1] = Digit.init(@intCast(time.hour % 10), allDigits);
+    digits[2] = Digit.init(@intCast(time.minute / 10), allDigits);
+    digits[3] = Digit.init(@intCast(time.minute % 10), allDigits);
+    digits[4] = Digit.init(@intCast(time.second / 10), allDigits);
+    digits[5] = Digit.init(@intCast(time.second % 10), allDigits);
 }
 
-fn setColorsFromDigits(digits: *const [6]u8, colors: *u32) void {
+fn setColorsFromDigits(digits: *const [NUM_DIGITS]Digit, colors: *u32) void {
     for (0..NUM_RECTS) |i| {
         const x = i / 4;
         const y = i % 4;
         const mask = @as(u32, 1) << @intCast(i);
-        if (digits[x] & (@as(u8, 1) << @intCast(3 - y)) != 0) {
+        if (digits[x].n & (@as(u32, 1) << @intCast(3 - y)) != 0) {
             colors.* |= mask;
         } else {
             colors.* &= ~mask;
@@ -232,6 +258,12 @@ const CharBuffer = struct {
     }
 };
 
+fn updateDigitsBuffer(digits: *const [NUM_DIGITS]Digit, buffer: Buffer) !void {
+    const mapped = try buffer.mapTransferBuffer(Digit, false);
+    defer buffer.unmapTransferBuffer();
+    @memcpy(mapped, digits);
+}
+
 pub fn main() !void {
     defer sdl3.shutdown();
 
@@ -257,6 +289,7 @@ pub fn main() !void {
     try gpu.claimWindow(window);
 
     const vbo = try createVertexBuffer(gpu);
+    defer vbo.deinit();
 
     const swap_texture_format = try gpu.getSwapchainTextureFormat(window);
     const pipeline = try createPipeline(allocator, gpu, swap_texture_format);
@@ -269,32 +302,26 @@ pub fn main() !void {
         digit.deinit();
     };
 
-    var tex_vboes = [_]Buffer{undefined} ** 6;
-    for (0..tex_vboes.len) |i| {
-        tex_vboes[i] = try createTexVertexBuffer(gpu, i);
-    }
-    defer for (tex_vboes) |buf| {
-        buf.deinit();
-    };
+    var vbo_digits = try createDigitsVertexBuffer(gpu);
+    defer vbo_digits.deinit();
 
     var cmd = try gpu.acquireCommandBuffer();
     const cp_pass = cmd.beginCopyPass();
     vbo.uploadToBuffer(cp_pass, false);
-    for (0..tex_vboes.len) |i| {
-        tex_vboes[i].uploadToBuffer(cp_pass, false);
-    }
+    vbo_digits.uploadToBuffer(cp_pass, false);
     for (allDigits) |digit| {
         digit.uploadToTexture(cp_pass);
     }
     cp_pass.end();
     try cmd.submit();
 
-    const tex_pipeline = try createTexPipeline(allocator, gpu, swap_texture_format);
+    const tex_pipeline = try createPipelineForDigits(allocator, gpu, swap_texture_format);
     const sampler = try createSampler(gpu);
-    var last_tick = sdl3.timer.getMillisecondsSinceInit();
+    var last_tick: u64 = 0;
 
-    var digits = [6]u8{ 0, 0, 0, 0, 0, 0 };
-    try updateDigitsToCurrentLocalTime(&digits);
+    var digits = [_]Digit{undefined} ** NUM_DIGITS;
+    var digits_buffer = try Buffer.init(gpu, .{ .size = NUM_DIGITS * @sizeOf(Digit), .usage = .{ .vertex = true } });
+    defer digits_buffer.deinit();
 
     var quit = false;
     while (!quit) {
@@ -306,13 +333,18 @@ pub fn main() !void {
                 else => {},
             };
 
+        cmd = try gpu.acquireCommandBuffer();
+
         const now = sdl3.timer.getMillisecondsSinceInit();
-        if (now - last_tick > 1000) {
+        if (last_tick == 0 or (now - last_tick > 1000)) {
             last_tick = now;
-            try updateDigitsToCurrentLocalTime(&digits);
+            try updateDigitsToCurrentLocalTime(&digits, allDigits);
+            try updateDigitsBuffer(&digits, digits_buffer);
+            const copy_pass = cmd.beginCopyPass();
+            digits_buffer.uploadToBuffer(copy_pass, false);
+            copy_pass.end();
         }
 
-        cmd = try gpu.acquireCommandBuffer();
         const texture, const width, const height = try cmd.acquireSwapchainTexture(window);
         const swap = texture orelse continue;
 
@@ -321,10 +353,12 @@ pub fn main() !void {
             .load = .clear,
             .clear_color = .{ .r = 0.0, .g = 0.0, .b = 0.0, .a = 1.0 },
         }};
+
         const pass = cmd.beginRenderPass(&ct, null);
 
         cmd.pushVertexUniformData(0, @ptrCast(&[_]f32{ @floatFromInt(width), @floatFromInt(height) }));
 
+        // render quads
         var colors: u32 = 0;
         setColorsFromDigits(&digits, &colors);
         cmd.pushVertexUniformData(1, @ptrCast(&colors));
@@ -332,18 +366,19 @@ pub fn main() !void {
         pass.bindVertexBuffers(0, &vbo.createBufferBindings(0));
         pass.drawPrimitives(6, NUM_RECTS, 0, 0);
 
+        // render digits
         pass.bindGraphicsPipeline(tex_pipeline);
-        for (0..digits.len) |i| {
-            const digit = digits[i];
-            cmd.pushVertexUniformData(1, @ptrCast(&digit));
-            cmd.pushVertexUniformData(2, @ptrCast(&allDigits[digit].size));
-            pass.bindVertexBuffers(0, &tex_vboes[i].createBufferBindings(0));
-            pass.bindFragmentSamplers(0, &[_]TextureSamplerBinding{.{
-                .texture = allDigits[digit].texture,
+        pass.bindVertexBuffers(0, &[_]BufferBinding{
+            vbo_digits.createBufferBinding(0),
+            digits_buffer.createBufferBinding(0),
+        });
+        for (0..allDigits.len) |i| {
+            pass.bindFragmentSamplers(@intCast(i), &[_]TextureSamplerBinding{.{
+                .texture = allDigits[i].texture,
                 .sampler = sampler,
             }});
-            pass.drawPrimitives(6, 1, 0, 0);
         }
+        pass.drawPrimitives(6, NUM_DIGITS, 0, 0);
 
         pass.end();
         try cmd.submit();

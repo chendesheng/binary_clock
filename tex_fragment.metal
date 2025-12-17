@@ -1,15 +1,14 @@
 using namespace metal;
 
 struct VSOut {
+    float4 position [[position]];
     float2 uv;
     uint digit [[flat]];
 };
 
 fragment float4 s_main(VSOut in [[stage_in]],
-                       texture2d<float> tex [[texture(0)]],
+                       array<texture2d<float>, 10> texes [[texture(0)]],
                        sampler samp        [[sampler(0)]]) {
 
-    return tex.sample(samp, in.uv);
+    return texes[in.digit].sample(samp, in.uv);
 }
-
-
