@@ -122,7 +122,7 @@ pub fn build(b: *std.Build) void {
         run_cmd.addArgs(args);
     }
 
-    b.installFile("test.ttf", "bin/test.ttf");
+    b.installFile("JetBrains Mono Regular Nerd Font Complete.ttf", "bin/JetBrains Mono Regular Nerd Font Complete.ttf");
     b.installFile("vertex.metal", "bin/vertex.metal");
     b.installFile("fragment.metal", "bin/fragment.metal");
     b.installFile("tex_vertex.metal", "bin/tex_vertex.metal");

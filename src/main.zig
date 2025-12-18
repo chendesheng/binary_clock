@@ -219,7 +219,7 @@ const CharBuffer = struct {
     buffer: TransferBuffer,
 
     fn init(gpu: Device, char: u8) !CharBuffer {
-        const font = try ttf.Font.init("test.ttf", 50);
+        const font = try ttf.Font.init("JetBrains Mono Regular Nerd Font Complete.ttf", 50);
         // try font.setSdf(true);
         defer font.deinit();
         // font.setHinting(.mono);
