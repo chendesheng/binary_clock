@@ -140,6 +140,18 @@ pub fn build(b: *std.Build) void {
     run_text_example_step.dependOn(&run_text_example_cmd.step);
     run_text_example_step.dependOn(b.getInstallStep());
 
+    const clock_exe = b.addExecutable(.{
+        .name = "clock",
+        .root_module = b.createModule(.{ .root_source_file = b.path("src/clock.zig"), .target = target, .optimize = optimize, .imports = &.{
+            .{ .name = "sdl3", .module = sdl3.module("sdl3") },
+        } }),
+    });
+    b.installArtifact(clock_exe);
+    const run_clock_step = b.step("run-clock", "Run the clock app");
+    const run_clock_cmd = b.addRunArtifact(clock_exe);
+    run_clock_step.dependOn(&run_clock_cmd.step);
+    run_clock_step.dependOn(b.getInstallStep());
+
     // Creates an executable that will run `test` blocks from the provided module.
     // Here `mod` needs to define a target, which is why earlier we made sure to
     // set the releative field.
