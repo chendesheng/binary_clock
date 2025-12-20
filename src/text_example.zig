@@ -24,6 +24,8 @@ const CommandBuffer = sdl3.gpu.CommandBuffer;
 const TransferBuffer = @import("./TransferBufer.zig");
 const CopyPass = sdl3.gpu.CopyPass;
 const ArrayList = std.ArrayList;
+const AtlasDrawSequence = @import("./AtlasDrawSequence.zig").AtlasDrawSequence;
+const FixedSizeArray = @import("./FixedSizeArray.zig").FixedSizeArray;
 
 const ShaderType = enum {
     VertexShader,
@@ -87,74 +89,15 @@ fn loadShader(allocator: Allocator, gpu: Device, shaderType: ShaderType, sampler
     return gpu.createShader(create_info);
 }
 
-fn BoundedArray(comptime size: usize, comptime T: type) type {
-    return struct {
-        buffer: []T,
-        len: usize,
-        const Self = @This();
-
-        fn init(buffer: []T) Self {
-            return .{
-                .buffer = buffer,
-                .len = 0,
-            };
-        }
-
-        fn append(self: *Self, item: T) !void {
-            if (self.len >= size) {
-                return error.BoundedArrayIsFull;
-            }
-
-            self.buffer[self.len] = item;
-            self.len += 1;
-        }
-
-        fn appendSlice(self: *Self, items: []const T) !void {
-            if (self.len + items.len > size) {
-                return error.BoundedArrayIsFull;
-            }
-
-            @memcpy(self.buffer[self.len .. self.len + items.len], items);
-            self.len += items.len;
-        }
-    };
-}
-
-fn AtlasDrawSequence(comptime T: type) type {
-    return struct {
-        const Self = @This();
-        _current: T,
-
-        fn init(sequence: T) Self {
-            return .{
-                ._current = sequence,
-            };
-        }
-
-        fn moveNext(self: *Self) void {
-            if (self._current) |current| {
-                self._current = current.*.next;
-            }
-        }
-
-        fn getCurrent(self: *Self) ?ttf.GpuAtlasDrawSequence {
-            if (self._current) |current| {
-                return ttf.GpuAtlasDrawSequence.fromSdl(current);
-            }
-            return null;
-        }
-    };
-}
-
 fn setTransferBuffer(context: *Context, sequence: anytype, colour: *const Color) !struct { usize, usize } {
     const transfer_data = try context.device.mapTransferBuffer(context.transfer_buffer, false);
     defer context.device.unmapTransferBuffer(context.transfer_buffer);
 
     const mapped_vertices: []Vertex = @alignCast(std.mem.bytesAsSlice(Vertex, transfer_data[0 .. MAX_VERTEX_COUNT * @sizeOf(Vertex)]));
-    var mapped_vertices_array = BoundedArray(MAX_VERTEX_COUNT, Vertex).init(mapped_vertices);
+    var mapped_vertices_array = try FixedSizeArray(MAX_VERTEX_COUNT, Vertex).init(mapped_vertices);
 
     const mapped_indices: []c_int = @alignCast(std.mem.bytesAsSlice(c_int, transfer_data[@sizeOf(Vertex) * MAX_VERTEX_COUNT .. (@sizeOf(Vertex) * MAX_VERTEX_COUNT + @sizeOf(c_int) * MAX_INDEX_COUNT)]));
-    var mapped_indices_array = BoundedArray(MAX_INDEX_COUNT, c_int).init(mapped_indices);
+    var mapped_indices_array = try FixedSizeArray(MAX_INDEX_COUNT, c_int).init(mapped_indices);
 
     var iter = AtlasDrawSequence(@TypeOf(sequence)).init(sequence);
     while (iter.getCurrent()) |seq| {

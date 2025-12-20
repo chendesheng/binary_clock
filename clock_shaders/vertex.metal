@@ -82,7 +82,7 @@ vertex QuadOutput quad_main(QuadInput in [[stage_in]], uint vid [[vertex_id]], u
 
     float2 tl = float2(-in.sz.x / 2.0, in.polar_pos.x);
 
-    float2 pos;
+    float2 pos = tl;
     uint i = vid % 6;
     if (i == 0 || i == 5) {
         pos = tl;
@@ -101,5 +101,33 @@ vertex QuadOutput quad_main(QuadInput in [[stage_in]], uint vid [[vertex_id]], u
     o.rect = float4(tl, in.sz);
     o.round_radius = in.round_radius;
 
+    return o;
+}
+
+struct NumberInput {
+    float2 xy [[attribute(0)]];
+    float2 uv [[attribute(1)]];
+    float2 polar_pos [[attribute(2)]];
+    float2 size [[attribute(3)]];
+    float4 color [[attribute(4)]];
+};
+
+struct NumberOutput {
+    float4 position [[position]];
+    float2 uv;
+    float4 color [[flat]];
+};
+
+vertex NumberOutput number_main(NumberInput in [[stage_in]], uint vid [[vertex_id]], constant float2& viewport [[buffer(0)]]) {
+    NumberOutput o;
+    o.color = in.color;
+    o.uv = in.uv;
+
+    float2 center = transform(rotation(in.polar_pos.y), float2(0.0, in.polar_pos.x));
+    float2 half_size = in.size / 2.0;
+
+    float2 local = float2(in.xy.x - half_size.x, in.xy.y + half_size.y);
+    float2 pos = center + local;
+    o.position = float4(pos / (viewport / 2.0), 0.0, 1.0);
     return o;
 }

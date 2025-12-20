@@ -62,3 +62,13 @@ fragment float4 circle_main(CircleInput in [[stage_in]]) {
 
   return float4(in.color.rgb, in.color.a * alpha);
 }
+
+struct NumberInput {
+  float4 position [[position]];
+  float2 uv;
+  float4 color [[flat]];
+};
+
+fragment float4 number_main(NumberInput in [[stage_in]], texture2d<float> tex [[texture(0)]], sampler samp [[sampler(0)]]) {
+  return in.color * tex.sample(samp, in.uv);
+}

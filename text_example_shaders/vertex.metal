@@ -4,20 +4,20 @@ using namespace metal;
 struct VSInput {
     float2 position  [[attribute(0)]];
     float4 color     [[attribute(1)]];
-    float2 tex_coord [[attribute(2)]];
+    float2 uv [[attribute(2)]];
 };
 
 struct VSOutput {
     float4 position [[position]];
     float4 color;
-    float2 tex_coord;
+    float2 uv;
 };
 
 vertex VSOutput s_main(VSInput in [[stage_in]], constant float2 &viewport [[buffer(0)]])
 {
     VSOutput out;
     out.color = in.color;
-    out.tex_coord = in.tex_coord;
+    out.uv = in.uv;
 
     float2 ndc;
     ndc.x = (in.position.x / viewport.x) * 2.0 - 1.0;
