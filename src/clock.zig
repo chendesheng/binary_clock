@@ -514,9 +514,6 @@ const Hands = struct {
     }
 };
 
-const WIDTH = 325;
-const HEIGHT = 325;
-
 fn drawScene(allocator: Allocator, gpu: Device, window: Window) !Texture {
     const swap_texture_format = try gpu.getSwapchainTextureFormat(window);
     const circle_render = try CircleRender.init(allocator, gpu, swap_texture_format, &[_]Circle{
@@ -545,10 +542,11 @@ fn drawScene(allocator: Allocator, gpu: Device, window: Window) !Texture {
     const numbers_render = try NumbersRender.init(allocator, gpu, swap_texture_format);
     defer numbers_render.deinit();
 
-    var cmd = try gpu.acquireCommandBuffer();
+    const cmd = try gpu.acquireCommandBuffer();
+    _, const width, const height = try cmd.waitAndAcquireSwapchainTexture(window);
     const bg_tex = try gpu.createTexture(.{
-        .width = WIDTH,
-        .height = HEIGHT,
+        .width = width,
+        .height = height,
         .format = swap_texture_format,
         .num_levels = 1,
         .usage = .{ .sampler = true, .color_target = true },
@@ -566,7 +564,7 @@ fn drawScene(allocator: Allocator, gpu: Device, window: Window) !Texture {
         .clear_color = .{ .r = 0.0, .g = 0.0, .b = 0.0, .a = 1.0 },
     }}, null);
 
-    cmd.pushVertexUniformData(0, @ptrCast(&[_]f32{ @floatFromInt(WIDTH), @floatFromInt(HEIGHT) }));
+    cmd.pushVertexUniformData(0, @ptrCast(&[_]f32{ @floatFromInt(width), @floatFromInt(height) }));
     circle_render.draw(r_pass);
     scale_render.draw(r_pass);
     numbers_render.draw(r_pass);
@@ -609,8 +607,13 @@ pub fn main() !void {
     try ttf.init();
     defer ttf.quit();
 
+    const WIDTH = 160;
+    const HEIGHT = 160;
     // Initial window setup.
-    const window = try Window.init("Clock", WIDTH, HEIGHT, .{});
+    const window = try Window.init("Clock", WIDTH, HEIGHT, .{
+        .high_pixel_density = true,
+        .metal = true,
+    });
     defer window.deinit();
 
     const gpu = try Device.init(.{ .msl = true }, false, "metal");
@@ -639,7 +642,7 @@ pub fn main() !void {
             };
 
         const cmd = try gpu.acquireCommandBuffer();
-        const texture, _, _ = try cmd.waitAndAcquireSwapchainTexture(window);
+        const texture, const swap_w, const swap_h = try cmd.waitAndAcquireSwapchainTexture(window);
         const swap = texture orelse continue;
 
         try hands.updateByTime();
@@ -655,8 +658,8 @@ pub fn main() !void {
                 .region = .{
                     .x = 0,
                     .y = 0,
-                    .w = WIDTH,
-                    .h = HEIGHT,
+                    .w = swap_w,
+                    .h = swap_h,
                 },
             },
             .destination = .{
@@ -666,8 +669,8 @@ pub fn main() !void {
                 .region = .{
                     .x = 0,
                     .y = 0,
-                    .w = WIDTH,
-                    .h = HEIGHT,
+                    .w = swap_w,
+                    .h = swap_h,
                 },
             },
             .load_op = .load,
@@ -683,7 +686,7 @@ pub fn main() !void {
             .clear_color = Colors.black,
         }}, null);
 
-        cmd.pushVertexUniformData(0, @ptrCast(&[_]f32{ @floatFromInt(WIDTH), @floatFromInt(HEIGHT) }));
+        cmd.pushVertexUniformData(0, @ptrCast(&[_]f32{ @floatFromInt(swap_w), @floatFromInt(swap_h) }));
         hands.draw(pass);
         pass.end();
         try cmd.submit();

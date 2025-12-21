@@ -13,10 +13,6 @@ struct CircleOutput {
     float4 color [[flat]];
 };
 
-float2 pixelToNDC(float2 p, float2 viewport) {
-    return float2((p.x / viewport.x) * 2.0 - 1.0 ,1.0 - (p.y / viewport.y) * 2.0);
-}
-
 float lengthToNDC(float l, float2 viewport) {
     return l / viewport.x * 2.0;
 }
@@ -96,6 +92,7 @@ vertex QuadOutput quad_main(QuadInput in [[stage_in]], uint vid [[vertex_id]], u
     o.local = pos;
 
     pos = transform(rotation(in.polar_pos.y), pos);
+    pos = floor(pos + 0.5);
     o.position = float4(pos / (viewport / 2.0), 0.0, 1.0);
     o.color = in.color;
     o.rect = float4(tl, in.sz);

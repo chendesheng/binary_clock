@@ -40,9 +40,10 @@ fragment float4 quad_main(QuadInput in [[stage_in]]) {
 
     // Anti-aliasing
     float2 g = float2(dfdx(dist), dfdy(dist));
-    float aa = length(g);
-    aa = clamp(aa, 0.75, 1.5);
+    float aa = length(g) * 1.5;
+    aa = clamp(aa, 1.0, 3.0);
     float alpha = smoothstep(aa, -aa, dist);
+    // float alpha = step(dist, 0.0);
 
     return float4(in.color.rgb,
                   in.color.a * alpha);
