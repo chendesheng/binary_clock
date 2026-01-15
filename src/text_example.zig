@@ -25,7 +25,6 @@ const TransferBuffer = @import("./TransferBufer.zig");
 const CopyPass = sdl3.gpu.CopyPass;
 const ArrayList = std.ArrayList;
 const AtlasDrawSequence = @import("./AtlasDrawSequence.zig").AtlasDrawSequence;
-const FixedSizeArray = @import("./FixedSizeArray.zig").FixedSizeArray;
 
 const ShaderType = enum {
     VertexShader,
@@ -94,26 +93,26 @@ fn setTransferBuffer(context: *Context, sequence: anytype, colour: *const Color)
     defer context.device.unmapTransferBuffer(context.transfer_buffer);
 
     const mapped_vertices: []Vertex = @alignCast(std.mem.bytesAsSlice(Vertex, transfer_data[0 .. MAX_VERTEX_COUNT * @sizeOf(Vertex)]));
-    var mapped_vertices_array = try FixedSizeArray(MAX_VERTEX_COUNT, Vertex).init(mapped_vertices);
+    var mapped_vertices_array = ArrayList(Vertex).initBuffer(mapped_vertices);
 
     const mapped_indices: []c_int = @alignCast(std.mem.bytesAsSlice(c_int, transfer_data[@sizeOf(Vertex) * MAX_VERTEX_COUNT .. (@sizeOf(Vertex) * MAX_VERTEX_COUNT + @sizeOf(c_int) * MAX_INDEX_COUNT)]));
-    var mapped_indices_array = try FixedSizeArray(MAX_INDEX_COUNT, c_int).init(mapped_indices);
+    var mapped_indices_array = ArrayList(c_int).initBuffer(mapped_indices);
 
     var iter = AtlasDrawSequence(@TypeOf(sequence)).init(sequence);
     while (iter.getCurrent()) |seq| {
         for (seq.xy, 0..) |pos, i| {
-            try mapped_vertices_array.append(.{
+            mapped_vertices_array.appendAssumeCapacity(.{
                 .pos = pos,
                 .colour = colour.*,
                 .uv = seq.uv[i],
             });
         }
-        try mapped_indices_array.appendSlice(seq.indices);
+        mapped_indices_array.appendSliceAssumeCapacity(seq.indices);
 
         iter.moveNext();
     }
 
-    return .{ mapped_vertices_array.len, mapped_indices_array.len };
+    return .{ mapped_vertices_array.items.len, mapped_indices_array.items.len };
 }
 
 fn transferData(context: *Context, num_vertices: usize, num_indices: usize) void {

@@ -25,7 +25,6 @@ const TransferBuffer = @import("./TransferBufer.zig");
 const CopyPass = sdl3.gpu.CopyPass;
 const RenderPass = sdl3.gpu.RenderPass;
 const Window = sdl3.video.Window;
-const FixedSizeArray = @import("./FixedSizeArray.zig").FixedSizeArray;
 const AtlasDrawSequence = @import("./AtlasDrawSequence.zig").AtlasDrawSequence;
 
 const Circle = struct {
