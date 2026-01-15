@@ -136,7 +136,7 @@ const CircleRender = struct {
         };
     }
 
-    fn uploadToBuffer(self: *const CircleRender, pass: CopyPass) !void {
+    fn uploadToBuffer(self: *const CircleRender, pass: CopyPass) void {
         self.transfer_buffer.uploadToBuffer(pass, self.buffer, false);
     }
 
@@ -215,7 +215,7 @@ const QuadRender = struct {
         @memcpy(mapped, quads);
     }
 
-    fn uploadToBuffer(self: *const QuadRender, pass: CopyPass) !void {
+    fn uploadToBuffer(self: *const QuadRender, pass: CopyPass) void {
         self.transfer_buffer.uploadToBuffer(pass, self.buffer, false);
     }
 
@@ -338,7 +338,7 @@ const NumbersRender = struct {
             pass.drawIndexedPrimitives(@intCast(self.sequence.indices.len), 1, 0, 0, 0);
         }
 
-        fn uploadToBuffer(self: *const NumberRender, pass: CopyPass) !void {
+        fn uploadToBuffer(self: *const NumberRender, pass: CopyPass) void {
             self.transfer_buffer.uploadToBuffer(pass, self.buffer, false);
             self.char_info_transfer_buffer.uploadToBuffer(pass, self.char_info_buffer, false);
             self.index_transfer_buffer.uploadToBuffer(pass, self.index_buffer, false);
@@ -394,9 +394,9 @@ const NumbersRender = struct {
         };
     }
 
-    fn uploadToBuffer(self: *const NumbersRender, pass: CopyPass) !void {
+    fn uploadToBuffer(self: *const NumbersRender, pass: CopyPass) void {
         for (self.numbers) |number| {
-            try number.uploadToBuffer(pass);
+            number.uploadToBuffer(pass);
         }
     }
 
@@ -433,26 +433,26 @@ const Hands = struct {
         const quads = [_]Quad{
             // hour hand
             .{
-                .polar_pos = .{ .radius = 6.0, .angle = 0 }, //
+                .polar_pos = .{ .radius = 6.0, .angle = 0 },
                 .sz = .{ .width = 8.0, .height = 20.0 },
                 .color = Colors.black,
                 .round_radius = 0,
             },
             .{
-                .polar_pos = .{ .radius = 24.0, .angle = 0 }, //
+                .polar_pos = .{ .radius = 24.0, .angle = 0 },
                 .sz = .{ .width = 16.0, .height = 80.0 },
                 .color = Colors.black,
                 .round_radius = 8.0,
             },
             // minute hand
             .{
-                .polar_pos = .{ .radius = 6.0, .angle = 0 }, //
+                .polar_pos = .{ .radius = 6.0, .angle = 0 },
                 .sz = .{ .width = 8.0, .height = 20.0 },
                 .color = Colors.black,
                 .round_radius = 0,
             },
             .{
-                .polar_pos = .{ .radius = 24.0, .angle = 0 }, //
+                .polar_pos = .{ .radius = 24.0, .angle = 0 },
                 .sz = .{ .width = 16.0, .height = 106.0 },
                 .color = Colors.black,
                 .round_radius = 8.0,
@@ -460,13 +460,13 @@ const Hands = struct {
 
             // second hand
             .{
-                .polar_pos = .{ .radius = 5.0, .angle = 0 }, //
+                .polar_pos = .{ .radius = 5.0, .angle = 0 },
                 .sz = .{ .width = 2.0, .height = 20.0 },
                 .color = Colors.orange,
                 .round_radius = 1.0,
             },
             .{
-                .polar_pos = .{ .radius = 5.0, .angle = 0 }, //
+                .polar_pos = .{ .radius = 5.0, .angle = 0 },
                 .sz = .{ .width = 2.0, .height = 128.0 },
                 .color = Colors.orange,
                 .round_radius = 1.0,
@@ -483,8 +483,8 @@ const Hands = struct {
         self.render.deinit();
     }
 
-    fn uploadToBuffer(self: *const Hands, pass: CopyPass) !void {
-        try self.render.uploadToBuffer(pass);
+    fn uploadToBuffer(self: *const Hands, pass: CopyPass) void {
+        self.render.uploadToBuffer(pass);
     }
 
     fn draw(self: *const Hands, pass: RenderPass) void {
@@ -527,7 +527,7 @@ fn drawScene(allocator: Allocator, gpu: Device, window: Window) !Texture {
     for (0..quads.len) |i| {
         const angle = @as(f32, @floatFromInt(i)) * 6.0;
         quads[i] = .{
-            .polar_pos = .{ .radius = 120.0, .angle = angle }, //
+            .polar_pos = .{ .radius = 120.0, .angle = angle },
             .sz = .{ .width = 4.0, .height = 12.0 },
             .color = if (i % 5 == 0) Colors.black else Colors.gray,
             .round_radius = 2.0,
@@ -552,9 +552,9 @@ fn drawScene(allocator: Allocator, gpu: Device, window: Window) !Texture {
     });
 
     const cp_pass = cmd.beginCopyPass();
-    try circle_render.uploadToBuffer(cp_pass);
-    try scale_render.uploadToBuffer(cp_pass);
-    try numbers_render.uploadToBuffer(cp_pass);
+    circle_render.uploadToBuffer(cp_pass);
+    scale_render.uploadToBuffer(cp_pass);
+    numbers_render.uploadToBuffer(cp_pass);
     cp_pass.end();
 
     const r_pass = cmd.beginRenderPass(&[_]ColorTargetInfo{.{
@@ -646,7 +646,7 @@ pub fn main() !void {
 
         try hands.updateByTime();
         const copy_pass = cmd.beginCopyPass();
-        try hands.uploadToBuffer(copy_pass);
+        hands.uploadToBuffer(copy_pass);
         copy_pass.end();
 
         cmd.blitTexture(.{
